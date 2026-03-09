@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets (never commit)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+
+# Logs and debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS and editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Build and cache
+dist/
+build/
+.cache/
+coverage/
+.nyc_output/
+
+# Optional
+*.tgz

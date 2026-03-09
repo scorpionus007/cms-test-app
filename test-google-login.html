@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test Google Login → CMS</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    pre { background: #f4f4f4; padding: 1rem; overflow: auto; font-size: 12px; }
+    .btn-wrap { margin: 1rem 0; }
+    h1 { font-size: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>Test Google Login → SecureDApp CMS</h1>
+  <p>1. Replace <code>YOUR_GOOGLE_CLIENT_ID</code> in this file with your Client ID from .env.</p>
+  <p>2. Serve this file (e.g. <code>npx serve -l 5500</code>). In Google Cloud Console → Credentials → your OAuth client → <strong>Authorized JavaScript origins</strong>, add this <em>exact</em> origin:</p>
+  <p id="originHint" style="background:#fff3cd;padding:0.5rem;font-family:monospace;"></p>
+  <p>3. Start the API: <code>npm start</code> (so <code>http://localhost:3000</code> is running).</p>
+  <div class="btn-wrap" id="buttonDiv"></div>
+  <pre id="result">(Response will appear here)</pre>
+
+  <script>
+    const API_URL = 'http://localhost:3000/auth/google-login';
+    const resultEl = document.getElementById('result');
+
+    function handleCredentialResponse(response) {
+      const googleToken = response.credential;
+      resultEl.textContent = 'Calling API...';
+
+      fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ googleToken })
+      })
+        .then(r => r.json())
+        .then(data => {
+          resultEl.textContent = JSON.stringify(data, null, 2);
+        })
+        .catch(err => {
+          resultEl.textContent = 'Error: ' + err.message;
+        });
+    }
+
+    window.onload = function () {
+      document.getElementById('originHint').textContent = window.location.origin;
+      google.accounts.id.initialize({
+        client_id: 'YOUR_GOOGLE_CLIENT_ID',
+        callback: handleCredentialResponse
+      });
+      google.accounts.id.renderButton(document.getElementById('buttonDiv'), {
+        type: 'standard',
+        size: 'large'
+      });
+    };
+  </script>
+</body>
+</html>
