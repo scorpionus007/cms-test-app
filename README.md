@@ -19,7 +19,7 @@ Multi-tenant consent management system (DPDP-oriented): Google login, onboarding
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/securedapp_cms.git
+git clone https://github.com/scorpionus007/securedapp_cms.git
 cd securedapp_cms
 npm install
 ```
