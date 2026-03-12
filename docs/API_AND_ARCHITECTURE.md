@@ -762,4 +762,4 @@ docs/
 
 ---
 
-This document describes the system as implemented: all APIs, request/response shapes, database entities, consent event-sourcing and hash chain, consent state cache, audit actions, auth, and configuration in one place.
+This document describes the system as implemented: all APIs, request/response shapes, database entities, consent event-sourcing and hash chain, consent state cache, audit actions, auth, and configuration in one place. please clear db and sync db.
