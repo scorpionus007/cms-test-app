@@ -1,6 +1,7 @@
 const express = require('express');
 const publicConsentController = require('../controllers/publicConsent.controller');
 const { authenticateApiKey } = require('../middleware/apiKey.middleware');
+const { publicLimiter } = require('../config/security');
 const {
   grantConsentValidation,
   withdrawConsentValidation,
@@ -9,6 +10,7 @@ const {
 
 const router = express.Router();
 
+router.use(publicLimiter);
 router.use(authenticateApiKey);
 
 router.get('/purposes', publicConsentController.getPurposes);

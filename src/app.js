@@ -9,16 +9,20 @@ const consentRoutes = require('./routes/consent.routes');
 const purposeRoutes = require('./routes/purpose.routes');
 const policyVersionRoutes = require('./routes/policyVersion.routes');
 const webhookRoutes = require('./routes/webhook.routes');
+const dsrRoutes = require('./routes/dsr.routes');
 const publicRoutes = require('./routes/public.routes');
 const swaggerSpec = require('./config/swagger');
 const { securityMiddleware, JSON_BODY_LIMIT } = require('./middleware/security');
 const { generalLimiter } = require('./config/security');
+const { requestLogger } = require('./middleware/requestLogger');
+const logger = require('./config/logger');
 
 const app = express();
 
 securityMiddleware(app);
 
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(requestLogger);
 app.use(generalLimiter);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -45,15 +49,16 @@ app.use('/consent', consentRoutes);
 app.use('/purposes', purposeRoutes);
 app.use('/policy-versions', policyVersionRoutes);
 app.use('/webhooks', webhookRoutes);
+app.use('/dsr', dsrRoutes);
 app.use('/public', publicRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.statusCode || 500;
   const isProduction = process.env.NODE_ENV === 'production';
-  if (!isProduction) {
-    console.error(err);
-  } else if (status >= 500) {
-    console.error(err.message || err);
+  if (status >= 500) {
+    logger.error(err.message || err, { stack: err.stack, url: req.originalUrl, method: req.method });
+  } else {
+    logger.warn(err.message || err, { status, url: req.originalUrl });
   }
   const message = status >= 500 && isProduction ? 'Internal server error' : (err.message || 'Internal server error');
   const body = { error: message };

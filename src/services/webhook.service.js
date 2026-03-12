@@ -4,7 +4,7 @@
 const crypto = require('crypto');
 const { Webhook } = require('../models');
 
-const ALLOWED_EVENTS = ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created'];
+const ALLOWED_EVENTS = ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created', 'dsr.completed'];
 
 /**
  * Create webhook. Generates secret if not provided.

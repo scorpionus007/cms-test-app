@@ -21,6 +21,7 @@ const spec = {
     { name: 'Purposes', description: 'Consent purposes (tenant-scoped)' },
     { name: 'Policy Versions', description: 'Policy versions (tenant-scoped)' },
     { name: 'Webhooks', description: 'Webhook endpoints (notify external systems on events)' },
+    { name: 'DSR', description: 'Data Subject Requests (access, erasure, rectification)' },
     { name: 'Public API', description: 'External CMS integration (API key auth, no JWT)' },
   ],
   components: {
@@ -203,7 +204,7 @@ const spec = {
           url: { type: 'string', format: 'uri', example: 'https://client.com/webhook' },
           events: {
             type: 'array',
-            items: { type: 'string', enum: ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created'] },
+            items: { type: 'string', enum: ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created', 'dsr.completed'] },
             example: ['consent.granted', 'consent.withdrawn'],
           },
           secret: { type: 'string', nullable: true, description: 'Optional; generated if omitted' },
@@ -267,6 +268,47 @@ const spec = {
               total_pages: { type: 'integer' },
             },
           },
+        },
+      },
+      DsrSubmitRequest: {
+        type: 'object',
+        required: ['user_id'],
+        properties: {
+          user_id: { type: 'string', description: 'Pseudonymous user identifier' },
+          type: { type: 'string', enum: ['access', 'erasure', 'rectification'], description: 'Request type' },
+        },
+      },
+      DsrRequestItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          user_id: { type: 'string' },
+          request_type: { type: 'string', enum: ['access', 'erasure', 'rectification'] },
+          status: { type: 'string', enum: ['pending', 'processing', 'completed', 'rejected'] },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      DsrListResponse: {
+        type: 'object',
+        properties: {
+          requests: { type: 'array', items: { $ref: '#/components/schemas/DsrRequestItem' } },
+          pagination: {
+            type: 'object',
+            properties: {
+              page: { type: 'integer' },
+              limit: { type: 'integer' },
+              total: { type: 'integer' },
+              total_pages: { type: 'integer' },
+            },
+          },
+        },
+      },
+      DsrUpdateRequest: {
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: { type: 'string', enum: ['pending', 'processing', 'completed', 'rejected'] },
+          metadata: { type: 'object', nullable: true, example: { processed_by: 'admin_id', notes: 'data exported' } },
         },
       },
     },
@@ -494,6 +536,127 @@ const spec = {
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           404: { description: 'Webhook not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/dsr/request': {
+      post: {
+        tags: ['DSR'],
+        summary: 'Submit DSR request (public)',
+        description: 'Data subject submits access, erasure, or rectification request. Uses API key (x-api-key). Creates request with status pending.',
+        security: [{ apiKey: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/DsrSubmitRequest' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'DSR request created',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DsrRequestItem' },
+              },
+            },
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/dsr': {
+      get: {
+        tags: ['DSR'],
+        summary: 'List DSR requests',
+        description: 'Returns all DSR requests for the tenant. Requires dsr:submit scope.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'processing', 'completed', 'rejected'] } },
+          { name: 'request_type', in: 'query', schema: { type: 'string', enum: ['access', 'erasure', 'rectification'] } },
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
+        ],
+        responses: {
+          200: {
+            description: 'Success',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DsrListResponse' },
+              },
+            },
+          },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/dsr/{id}': {
+      patch: {
+        tags: ['DSR'],
+        summary: 'Update DSR status',
+        description: 'Update request status (pending, processing, completed, rejected). Appends lifecycle event. For completed erasure, executes erasure and emits dsr.completed webhook.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'DSR request UUID' },
+        ],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/DsrUpdateRequest' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Status updated',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DsrRequestItem' },
+              },
+            },
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'DSR request not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/dsr/{id}/export': {
+      get: {
+        tags: ['DSR'],
+        summary: 'Export data (access request)',
+        description: 'Compiles user data: consents, consent events, purposes, policy versions, audit logs. Only for access requests.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'DSR request UUID' },
+        ],
+        responses: {
+          200: {
+            description: 'Export JSON',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    user_id: { type: 'string' },
+                    exported_at: { type: 'string', format: 'date-time' },
+                    consents: { type: 'array' },
+                    events: { type: 'array' },
+                    policy_versions: { type: 'array' },
+                    audit_logs: { type: 'array' },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Export only for access requests', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'DSR request not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -954,8 +1117,7 @@ const spec = {
           404: { description: 'Consent not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
-    },
-  },
+    }
 };
 
 module.exports = spec;

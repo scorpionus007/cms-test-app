@@ -1,6 +1,6 @@
 const { body, param } = require('express-validator');
 
-const ALLOWED = ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created'];
+const ALLOWED = ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created', 'dsr.completed'];
 
 const createValidation = [
   body('url')

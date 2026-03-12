@@ -10,6 +10,7 @@ Multi-tenant consent management system (DPDP-oriented): Google login, onboarding
 
 - **Node.js** 18+ (LTS recommended)
 - **MySQL** 8.x (or 5.7)
+- **Redis** (for webhook queue; optional if you don’t use webhooks)
 - **Google Cloud Console** – OAuth 2.0 Client ID (Web application) for Google login
 
 ---
@@ -46,8 +47,17 @@ Edit `.env` and set:
 | `JWT_EXPIRES_IN` | No | Default `7d` |
 | `PORT` | No | Server port, default `3000` |
 | `NODE_ENV` | No | `development` or `production` |
+| `LOG_LEVEL` | No | Winston: `error`, `warn`, `info`, `debug` (default: info in prod, debug in dev) |
+| `LOG_DIR` | No | If set, write `combined.log` and `error.log` (e.g. `logs`) |
+| `RATE_LIMIT_WINDOW_MS` | No | Rate limit window in ms (default 900000 = 15 min) |
+| `RATE_LIMIT_MAX_GENERAL` | No | Max requests per window for general API (default 200) |
+| `RATE_LIMIT_MAX_AUTH` | No | Max login attempts per window (default 10) |
+| `RATE_LIMIT_MAX_PUBLIC` | No | Max requests per window for public/API-key routes (default 60) |
 | `CORS_ORIGIN` | No | Comma-separated origins (production) |
 | `DB_LOGGING` | No | Set to `true` to log SQL (dev only) |
+| `REDIS_ENABLED` | No | Set to `true` to enable Redis for webhook queue (default: off) |
+| `REDIS_HOST` | No | Redis host for webhook queue (default `127.0.0.1`) |
+| `REDIS_PORT` | No | Redis port (default `6379`) |
 
 ### 3. Database
 
@@ -73,6 +83,23 @@ npm run dev
 
 Server runs at **http://localhost:3000** (or your `PORT`). Swagger UI: **http://localhost:3000/api-docs**.
 
+### 5. Webhooks (async queue)
+
+Webhook delivery is offloaded to a **BullMQ queue + Redis**. The API only enqueues jobs; a separate worker sends HTTP requests and records deliveries.
+
+**Redis is off by default.** The API starts without Redis; webhook dispatch no-ops until you enable it.
+
+**To use webhooks:**
+1. Install and start **Redis** (e.g. locally on port 6379).
+2. Set `REDIS_ENABLED=true` in `.env` (and `REDIS_HOST` / `REDIS_PORT` if needed).
+3. Run the webhook worker in a separate process:
+
+```bash
+npm run worker:webhook
+```
+
+Keep the worker running alongside the API. Failed deliveries are retried (exponential backoff); after 5 failures the attempt is recorded in `webhook_deliveries` with `status: failed` (dead letter).
+
 ---
 
 ## Scripts
@@ -85,6 +112,7 @@ Server runs at **http://localhost:3000** (or your `PORT`). Swagger UI: **http://
 | `npm run db:sync` | Sync/alter tables (Sequelize) |
 | `npm run db:clear` | Truncate all data (dev only; requires `CLEAR_DB_CONFIRM=yes`) |
 | `npm run db:fix-clients-name` | Add `clients.name` column if missing |
+| `npm run worker:webhook` | Run webhook delivery worker (requires Redis) |
 
 ---
 

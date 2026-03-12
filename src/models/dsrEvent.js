@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 
-const DSR_STATUS = ['created', 'identity_verified', 'approved', 'executing', 'completed', 'rejected', 'escalated'];
+const DSR_EVENT_STATUS = ['pending', 'processing', 'completed'];
 
 module.exports = (sequelize) => {
   const DsrEvent = sequelize.define(
@@ -17,12 +17,13 @@ module.exports = (sequelize) => {
         references: { model: 'dsr_requests', key: 'id' },
       },
       status: {
-        type: DataTypes.ENUM(...DSR_STATUS),
+        type: DataTypes.ENUM(...DSR_EVENT_STATUS),
         allowNull: false,
       },
       metadata: {
         type: DataTypes.JSON,
         allowNull: true,
+        comment: 'e.g. { processed_by, notes }',
       },
       created_at: {
         type: DataTypes.DATE,
