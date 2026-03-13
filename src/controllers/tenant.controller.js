@@ -1,8 +1,5 @@
 const tenantService = require('../services/tenant.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 async function onboard(req, res, next) {
   try {

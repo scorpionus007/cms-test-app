@@ -14,6 +14,12 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: 'tenants', key: 'id' },
       },
+      app_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'apps', key: 'id' },
+        comment: 'Policy is scoped per app; null for legacy rows until backfill',
+      },
       version_label: {
         type: DataTypes.STRING(100),
         allowNull: false,
@@ -55,7 +61,8 @@ module.exports = (sequelize) => {
       updatedAt: 'updated_at',
       indexes: [
         { fields: ['tenant_id'] },
-        { unique: true, fields: ['tenant_id', 'version_label'] },
+        { fields: ['app_id'] },
+        { unique: true, fields: ['app_id', 'version_label'] },
       ],
     }
   );

@@ -20,10 +20,17 @@ Complete reference for the DPDP-oriented multi-tenant consent and audit backend:
 | `/api-docs` | Swagger UI |
 | `/api-docs.json` | OpenAPI spec (JSON) |
 | `/auth/*` | Authentication |
-| `/tenant/*` | Tenant onboarding & tenant info |
-| `/clients` | Client (user) management |
+| `/tenant/*` | Tenant onboarding, tenant info, **apps** (CRUD), API keys |
+| `/tenant/apps/:appId/policy-versions` | Policy versions **per app** |
+| `/tenant/apps/:appId/dsr` | DSR list, update, export **per app** |
+| `/apps/:appId/consent` | Consent (grant, get state, withdraw) **per app** |
+| `/clients` | Client (user) management (tenant-level, shared across apps) |
 | `/audit-logs` | Audit log listing |
-| `/consent` | Consent identity & events (grant, withdraw, get state) |
+| `/purposes` | Purposes (tenant-level, shared across apps) |
+| `/dsr/request` | Public DSR submit (body must include `app_id`) |
+| `/public/purposes` | Public: list purposes (tenant) |
+| `/public/apps/:appId/policy` | Public: active policy for app |
+| `/public/apps/:appId/consent` | Public: grant/withdraw consent for app |
 
 ### 1.2 Security Middleware (Global)
 
@@ -91,7 +98,25 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.2 `clients`
+### 3.2 `apps`
+
+Each tenant can have multiple apps. **Clients** are shared across apps; **purposes** are tenant-level (shared); **policy**, **consent**, and **DSR** are per app.
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NO | UUIDV4 | Primary key |
+| `tenant_id` | UUID | NO | - | FK → tenants.id |
+| `name` | VARCHAR(255) | NO | - | Display name |
+| `slug` | VARCHAR(100) | NO | - | URL-friendly id, unique per tenant |
+| `status` | ENUM('active','inactive') | YES | 'active' | Status |
+| `created_at` | DATE | NO | NOW | Created at |
+| `updated_at` | DATE | NO | NOW | Updated at |
+
+**Indexes:** `tenant_id`; unique `(tenant_id, slug)`.
+
+---
+
+### 3.3 `clients`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -112,7 +137,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.3 `purposes`
+### 3.4 `purposes`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -129,7 +154,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.4 `policy_versions`
+### 3.5 `policy_versions`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -144,7 +169,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.5 `consents`
+### 3.6 `consents`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -160,7 +185,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.6 `consent_events`
+### 3.7 `consent_events`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -179,7 +204,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.7 `consent_state_cache`
+### 3.8 `consent_state_cache`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -196,7 +221,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.8 `audit_logs`
+### 3.9 `audit_logs`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -216,7 +241,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.9 `webhooks`
+### 3.10 `webhooks`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -232,7 +257,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.10 `dsr_requests`
+### 3.11 `dsr_requests`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -247,7 +272,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.11 `dsr_events`
+### 3.12 `dsr_events`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -261,7 +286,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.12 `breach_reports`
+### 3.13 `breach_reports`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -276,7 +301,7 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ---
 
-### 3.13 Entity Relationship Summary
+### 3.14 Entity Relationship Summary
 
 - **Tenant** → has many: Client, Purpose, PolicyVersion, Consent, ConsentStateCache, Webhook, AuditLog, DsrRequest, BreachReport.
 - **Client** → belongs to Tenant.
@@ -762,4 +787,4 @@ docs/
 
 ---
 
-This document describes the system as implemented: all APIs, request/response shapes, database entities, consent event-sourcing and hash chain, consent state cache, audit actions, auth, and configuration in one place. please clear db and sync db.
+This document describes the system as implemented: all APIs, request/response shapes, database entities, consent event-sourcing and hash chain, consent state cache, audit actions, auth, and configuration in one place. Please clear db and sync db. All of the above APIs are implemented.

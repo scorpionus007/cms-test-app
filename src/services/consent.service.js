@@ -32,14 +32,14 @@ async function validatePurpose(tenantId, purposeId) {
 }
 
 /**
- * Validate policy version belongs to tenant and exists.
+ * Validate policy version belongs to tenant and app and exists.
  */
-async function validatePolicyVersion(tenantId, policyVersionId) {
+async function validatePolicyVersion(tenantId, appId, policyVersionId) {
   const policy = await PolicyVersion.findOne({
-    where: { id: policyVersionId, tenant_id: tenantId },
+    where: { id: policyVersionId, tenant_id: tenantId, app_id: appId },
   });
   if (!policy) {
-    const err = new Error('Policy version not found or does not belong to tenant');
+    const err = new Error('Policy version not found or does not belong to this app');
     err.statusCode = 404;
     throw err;
   }
@@ -48,12 +48,17 @@ async function validatePolicyVersion(tenantId, policyVersionId) {
 
 /**
  * Grant consent: find or create consent identity, append GRANTED event, audit.
- * @param {Object} [options] - Optional. auditActionGranted: e.g. 'PUBLIC_CONSENT_GRANTED' for public API.
+ * App-scoped. @param {Object} [options] - Optional. auditActionGranted: e.g. 'PUBLIC_CONSENT_GRANTED' for public API.
  */
-async function grantConsent(tenantId, actorClientId, body, ipAddress = null, options = {}) {
+async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = null, options = {}) {
   const auditAction = options.auditActionGranted || 'CONSENT_GRANTED';
   const { userId, purposeId, policyVersionId } = body;
 
+  if (!appId) {
+    const err = new Error('app_id is required');
+    err.statusCode = 400;
+    throw err;
+  }
   if (!userId || typeof userId !== 'string' || !userId.trim()) {
     const err = new Error('userId is required');
     err.statusCode = 400;
@@ -72,11 +77,12 @@ async function grantConsent(tenantId, actorClientId, body, ipAddress = null, opt
 
   const normalizedUserId = userId.trim();
   await validatePurpose(tenantId, purposeId);
-  await validatePolicyVersion(tenantId, policyVersionId);
+  await validatePolicyVersion(tenantId, appId, policyVersionId);
 
   let consent = await Consent.findOne({
     where: {
       tenant_id: tenantId,
+      app_id: appId,
       user_id: normalizedUserId,
       purpose_id: purposeId,
     },
@@ -85,6 +91,7 @@ async function grantConsent(tenantId, actorClientId, body, ipAddress = null, opt
   if (!consent) {
     consent = await Consent.create({
       tenant_id: tenantId,
+      app_id: appId,
       user_id: normalizedUserId,
       purpose_id: purposeId,
     });
@@ -110,6 +117,7 @@ async function grantConsent(tenantId, actorClientId, body, ipAddress = null, opt
 
   await ConsentStateCache.upsert({
     tenant_id: tenantId,
+    app_id: appId,
     user_id: normalizedUserId,
     purpose_id: purposeId,
     current_status: 'granted',
@@ -142,12 +150,16 @@ async function grantConsent(tenantId, actorClientId, body, ipAddress = null, opt
 
 /**
  * Withdraw consent for a single (user, purpose): find consent identity, append WITHDRAWN event.
- * Consent = identity (immutable); state = derived from events. No DELETE/UPDATE on consents table.
- * Idempotent: if latest event is already WITHDRAWN, no duplicate event is inserted.
+ * App-scoped. Idempotent: if latest event is already WITHDRAWN, no duplicate event is inserted.
  * @param {Object} [options] - Optional. auditActionWithdrawn: e.g. 'PUBLIC_CONSENT_WITHDRAWN' for public API.
  */
-async function withdrawConsent(tenantId, userId, purposeId, actorClientId, ipAddress = null, options = {}) {
+async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId, ipAddress = null, options = {}) {
   const auditAction = options.auditActionWithdrawn || 'CONSENT_WITHDRAWN';
+  if (!appId) {
+    const err = new Error('app_id is required');
+    err.statusCode = 400;
+    throw err;
+  }
   if (!userId || typeof userId !== 'string' || !userId.trim()) {
     const err = new Error('userId is required');
     err.statusCode = 400;
@@ -164,6 +176,7 @@ async function withdrawConsent(tenantId, userId, purposeId, actorClientId, ipAdd
   const consent = await Consent.findOne({
     where: {
       tenant_id: tenantId,
+      app_id: appId,
       user_id: normalizedUserId,
       purpose_id: purposeId,
     },
@@ -204,6 +217,7 @@ async function withdrawConsent(tenantId, userId, purposeId, actorClientId, ipAdd
 
   await ConsentStateCache.upsert({
     tenant_id: tenantId,
+    app_id: appId,
     user_id: normalizedUserId,
     purpose_id: consent.purpose_id,
     current_status: 'withdrawn',
@@ -235,10 +249,14 @@ async function withdrawConsent(tenantId, userId, purposeId, actorClientId, ipAdd
 }
 
 /**
- * Get current consent state for a user from cache (read-optimized).
- * Source of truth remains consent_events; cache is for performance only.
+ * Get current consent state for a user from cache (read-optimized). App-scoped.
  */
-async function getConsentState(tenantId, userId) {
+async function getConsentState(tenantId, appId, userId) {
+  if (!appId) {
+    const err = new Error('app_id is required');
+    err.statusCode = 400;
+    throw err;
+  }
   if (!userId || typeof userId !== 'string' || !userId.trim()) {
     const err = new Error('userId is required');
     err.statusCode = 400;
@@ -246,7 +264,7 @@ async function getConsentState(tenantId, userId) {
   }
   const normalizedUserId = userId.trim();
   const rows = await ConsentStateCache.findAll({
-    where: { tenant_id: tenantId, user_id: normalizedUserId },
+    where: { tenant_id: tenantId, app_id: appId, user_id: normalizedUserId },
     attributes: ['purpose_id', 'current_status', 'policy_version_id', 'updated_at'],
     order: [['purpose_id', 'ASC']],
   });

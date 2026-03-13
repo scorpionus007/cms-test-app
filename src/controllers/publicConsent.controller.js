@@ -1,8 +1,5 @@
 const publicConsentService = require('../services/publicConsent.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 async function getPurposes(req, res, next) {
   try {
@@ -15,7 +12,8 @@ async function getPurposes(req, res, next) {
 
 async function getPolicy(req, res, next) {
   try {
-    const policyVersion = await publicConsentService.getActivePolicy(req.tenant.id, getClientIp(req));
+    const appId = req.appId || req.params.appId;
+    const policyVersion = await publicConsentService.getActivePolicy(req.tenant.id, appId, getClientIp(req));
     res.status(200).json({ policyVersion });
   } catch (err) {
     next(err);
@@ -24,7 +22,13 @@ async function getPolicy(req, res, next) {
 
 async function grantConsent(req, res, next) {
   try {
-    await publicConsentService.grantConsent(req.tenant.id, req.body, getClientIp(req));
+    const appId = req.appId || req.params.appId;
+    const body = {
+      user_id: req.body.userId ?? req.body.user_id,
+      purpose_id: req.body.purposeId ?? req.body.purpose_id,
+      policy_version_id: req.body.policyVersionId ?? req.body.policy_version_id,
+    };
+    await publicConsentService.grantConsent(req.tenant.id, appId, body, getClientIp(req));
     res.status(201).json({ success: true });
   } catch (err) {
     next(err);
@@ -33,7 +37,12 @@ async function grantConsent(req, res, next) {
 
 async function withdrawConsent(req, res, next) {
   try {
-    await publicConsentService.withdrawConsent(req.tenant.id, req.body, getClientIp(req));
+    const appId = req.appId || req.params.appId;
+    const body = {
+      user_id: req.body.userId ?? req.body.user_id,
+      purpose_id: req.body.purposeId ?? req.body.purpose_id,
+    };
+    await publicConsentService.withdrawConsent(req.tenant.id, appId, body, getClientIp(req));
     res.status(200).json({ success: true });
   } catch (err) {
     next(err);

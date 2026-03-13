@@ -14,6 +14,12 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: 'tenants', key: 'id' },
       },
+      app_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'apps', key: 'id' },
+        comment: 'Consent is scoped per app; null for legacy until backfill',
+      },
       user_id: {
         type: DataTypes.STRING(255),
         allowNull: false,
@@ -36,8 +42,9 @@ module.exports = (sequelize) => {
       timestamps: false,
       indexes: [
         { fields: ['tenant_id'] },
-        { unique: true, fields: ['tenant_id', 'user_id', 'purpose_id'] },
-        { name: 'idx_consent_lookup', fields: ['tenant_id', 'user_id'] },
+        { fields: ['app_id'] },
+        { unique: true, fields: ['tenant_id', 'app_id', 'user_id', 'purpose_id'] },
+        { name: 'idx_consent_lookup', fields: ['tenant_id', 'app_id', 'user_id'] },
       ],
     }
   );

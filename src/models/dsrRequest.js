@@ -17,6 +17,12 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: 'tenants', key: 'id' },
       },
+      app_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'apps', key: 'id' },
+        comment: 'DSR is scoped per app; null for legacy until backfill',
+      },
       user_id: {
         type: DataTypes.STRING(255),
         allowNull: false,
@@ -43,8 +49,9 @@ module.exports = (sequelize) => {
       timestamps: false,
       indexes: [
         { fields: ['tenant_id'] },
-        { fields: ['tenant_id', 'status'] },
-        { fields: ['tenant_id', 'user_id'] },
+        { fields: ['app_id'] },
+        { fields: ['tenant_id', 'app_id', 'status'] },
+        { fields: ['tenant_id', 'app_id', 'user_id'] },
       ],
     }
   );

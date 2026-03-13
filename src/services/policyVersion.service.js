@@ -8,10 +8,10 @@ function computeDocumentHash(policyText) {
 }
 
 /**
- * Create policy version: deactivate previous active, create new, set is_active = true.
- * All tenant-scoped.
+ * Create policy version: deactivate previous active for this app, create new, set is_active = true.
+ * App-scoped (policy is per app).
  */
-async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = null) {
+async function createPolicyVersion(tenantId, appId, actorClientId, body, ipAddress = null) {
   const { version, policy_text, effective_from } = body;
   if (!version || typeof version !== 'string' || !version.trim()) {
     const err = new Error('version is required');
@@ -20,6 +20,11 @@ async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = nu
   }
   if (!policy_text || typeof policy_text !== 'string') {
     const err = new Error('policy_text is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!appId) {
+    const err = new Error('app_id is required');
     err.statusCode = 400;
     throw err;
   }
@@ -39,11 +44,12 @@ async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = nu
   try {
     await PolicyVersion.update(
       { is_active: false },
-      { where: { tenant_id: tenantId }, transaction }
+      { where: { tenant_id: tenantId, app_id: appId }, transaction }
     );
     const policyVersion = await PolicyVersion.create(
       {
         tenant_id: tenantId,
+        app_id: appId,
         version_label: versionLabel,
         policy_text: policy_text,
         document_hash: documentHash,
@@ -57,7 +63,7 @@ async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = nu
   } catch (err) {
     await transaction.rollback();
     if (err.name === 'SequelizeUniqueConstraintError') {
-      const e = new Error('A policy version with this version label already exists for the tenant');
+      const e = new Error('A policy version with this version label already exists for this app');
       e.statusCode = 409;
       throw e;
     }
@@ -65,7 +71,7 @@ async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = nu
   }
 
   const created = await PolicyVersion.findByPk(createdId, {
-    attributes: ['id', 'tenant_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
+    attributes: ['id', 'tenant_id', 'app_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
   });
 
   await auditService.logAction({
@@ -88,12 +94,12 @@ async function createPolicyVersion(tenantId, actorClientId, body, ipAddress = nu
 }
 
 /**
- * Get active policy version for tenant.
+ * Get active policy version for app.
  */
-async function getActivePolicyVersion(tenantId, actorClientId, ipAddress = null) {
+async function getActivePolicyVersion(tenantId, appId, actorClientId, ipAddress = null) {
   const policyVersion = await PolicyVersion.findOne({
-    where: { tenant_id: tenantId, is_active: true },
-    attributes: ['id', 'tenant_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
+    where: { tenant_id: tenantId, app_id: appId, is_active: true },
+    attributes: ['id', 'tenant_id', 'app_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
   });
   await auditService.logAction({
     tenant_id: tenantId,
@@ -108,12 +114,12 @@ async function getActivePolicyVersion(tenantId, actorClientId, ipAddress = null)
 }
 
 /**
- * List all policy versions for tenant, ordered by created_at desc.
+ * List all policy versions for app, ordered by created_at desc.
  */
-async function listPolicyVersions(tenantId, actorClientId, ipAddress = null) {
+async function listPolicyVersions(tenantId, appId, actorClientId, ipAddress = null) {
   const versions = await PolicyVersion.findAll({
-    where: { tenant_id: tenantId },
-    attributes: ['id', 'tenant_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
+    where: { tenant_id: tenantId, app_id: appId },
+    attributes: ['id', 'tenant_id', 'app_id', 'version_label', 'policy_text', 'document_hash', 'effective_from', 'is_active', 'created_at', 'updated_at'],
     order: [['created_at', 'DESC']],
   });
   await auditService.logAction({

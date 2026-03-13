@@ -4,13 +4,12 @@ const authRoutes = require('./routes/auth.routes');
 const tenantRoutes = require('./routes/tenant.routes');
 const clientRoutes = require('./routes/client.routes');
 const auditRoutes = require('./routes/audit.routes');
-const consentReadRoutes = require('./routes/consentRead.routes');
-const consentRoutes = require('./routes/consent.routes');
 const purposeRoutes = require('./routes/purpose.routes');
-const policyVersionRoutes = require('./routes/policyVersion.routes');
 const webhookRoutes = require('./routes/webhook.routes');
 const dsrRoutes = require('./routes/dsr.routes');
+const appsRoutes = require('./routes/apps.routes');
 const publicRoutes = require('./routes/public.routes');
+const cors = require('cors');
 const swaggerSpec = require('./config/swagger');
 const { securityMiddleware, JSON_BODY_LIMIT } = require('./middleware/security');
 const { generalLimiter } = require('./config/security');
@@ -20,6 +19,12 @@ const logger = require('./config/logger');
 const app = express();
 
 securityMiddleware(app);
+
+// CORS: allow frontend / test origins. Set CORS_ORIGIN (comma-separated) in production.
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+  : ['http://localhost:3000', 'http://localhost:5500', 'http://127.0.0.1:3000', 'http://127.0.0.1:5500'];
+app.use(cors({ origin: corsOrigins, credentials: true }));
 
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(requestLogger);
@@ -44,12 +49,11 @@ app.use('/auth', authRoutes);
 app.use('/tenant', tenantRoutes);
 app.use('/clients', clientRoutes);
 app.use('/audit-logs', auditRoutes);
-app.use('/consent', consentReadRoutes);
-app.use('/consent', consentRoutes);
 app.use('/purposes', purposeRoutes);
-app.use('/policy-versions', policyVersionRoutes);
 app.use('/webhooks', webhookRoutes);
-app.use('/dsr', dsrRoutes);
+// Consent is per app: mount at /apps/:appId so req.params.appId is set
+app.use('/apps/:appId', appsRoutes);
+app.use('/dsr', dsrRoutes);   // POST /dsr/request only (public, app_id in body); admin DSR under /tenant/apps/:appId/dsr
 app.use('/public', publicRoutes);
 
 app.use((err, req, res, next) => {

@@ -6,7 +6,20 @@ const spec = {
   openapi: '3.0.3',
   info: {
     title: 'SecureDApp CMS API',
-    description: 'Multi-tenant consent management system (DPDP compliance).',
+    description: `Multi-tenant consent management system (DPDP compliance).
+
+## Entire working flow
+
+1. **Auth** – \`POST /auth/google-login\` with Google ID token → receive JWT (onboarding or full).
+2. **Onboard** (if \`onboarding: true\`) – \`POST /tenant/onboard\` with organization_name, country → tenant + owner client + full JWT.
+3. **Tenant** – \`GET /tenant/me\`, \`GET /auth/me\` for current tenant/user. Create API keys: \`POST /tenant/api-keys\`, \`GET /tenant/api-keys\`, \`DELETE /tenant/api-keys/:id\`.
+4. **Apps** – \`GET /tenant/apps\`, \`POST /tenant/apps\` (name, slug), \`GET/PUT/DELETE /tenant/apps/:appId\`. Policy and DSR admin are per app.
+5. **Purposes** – \`POST /purposes\`, \`GET /purposes\`, \`PUT /purposes/:id\`, \`DELETE /purposes/:id\` (tenant-level, shared by apps).
+6. **Policy versions (per app)** – \`POST /tenant/apps/:appId/policy-versions\`, \`GET /tenant/apps/:appId/policy-versions/active\`, \`GET /tenant/apps/:appId/policy-versions\`.
+7. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent/:userId/:purposeId\`.
+8. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\`.
+9. **DSR** – Public: \`POST /dsr/request\` (body: **app_id**, user_id, type/request_type). Admin: \`GET /tenant/apps/:appId/dsr\`, \`PATCH /tenant/apps/:appId/dsr/:id\`, \`GET /tenant/apps/:appId/dsr/:id/export\`.
+10. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\`. **Audit** – \`GET /audit-logs\` (owner/admin).`,
     version: '1.0.0',
   },
   servers: [
@@ -14,7 +27,8 @@ const spec = {
   ],
   tags: [
     { name: 'Auth', description: 'Authentication and current user' },
-    { name: 'Tenant', description: 'Organization / tenant' },
+    { name: 'Tenant', description: 'Organization / tenant and apps' },
+    { name: 'Apps', description: 'Per-app consent (JWT); policy and DSR under /tenant/apps/:appId' },
     { name: 'Clients', description: 'Tenant users (invite, list)' },
     { name: 'Audit', description: 'Audit logs (owner/admin)' },
     { name: 'Consent', description: 'Consent identity and events (event-sourced)' },
@@ -112,6 +126,32 @@ const spec = {
           tenant: { $ref: '#/components/schemas/Tenant' },
           client: { $ref: '#/components/schemas/Client' },
           token: { type: 'string', description: 'Full JWT after onboarding' },
+        },
+      },
+      App: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          tenant_id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          slug: { type: 'string' },
+          status: { type: 'string', enum: ['active', 'inactive'] },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      AppCreateRequest: {
+        type: 'object',
+        required: ['name', 'slug'],
+        properties: {
+          name: { type: 'string', example: 'My Web App' },
+          slug: { type: 'string', example: 'my-web-app', description: 'URL-friendly, unique per tenant' },
+        },
+      },
+      AppListResponse: {
+        type: 'object',
+        properties: {
+          apps: { type: 'array', items: { $ref: '#/components/schemas/App' } },
         },
       },
       Tenant: {
@@ -272,11 +312,14 @@ const spec = {
       },
       DsrSubmitRequest: {
         type: 'object',
-        required: ['user_id'],
+        required: ['app_id', 'user_id'],
         properties: {
+          app_id: { type: 'string', format: 'uuid', description: 'App UUID (DSR is per app)' },
           user_id: { type: 'string', description: 'Pseudonymous user identifier' },
-          type: { type: 'string', enum: ['access', 'erasure', 'rectification'], description: 'Request type' },
+          type: { type: 'string', enum: ['access', 'erasure', 'rectification'], description: 'Request type (use type or request_type)' },
+          request_type: { type: 'string', enum: ['access', 'erasure', 'rectification'], description: 'Request type (use type or request_type)' },
         },
+        description: 'app_id and user_id required; exactly one of type or request_type required.',
       },
       DsrRequestItem: {
         type: 'object',
@@ -311,6 +354,202 @@ const spec = {
           metadata: { type: 'object', nullable: true, example: { processed_by: 'admin_id', notes: 'data exported' } },
         },
       },
+      Purpose: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          tenant_id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          required: { type: 'boolean' },
+          purpose_code: { type: 'string', nullable: true },
+          retention_days: { type: 'integer', nullable: true },
+          active: { type: 'boolean' },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      PurposeCreateRequest: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', example: 'Analytics' },
+          description: { type: 'string', nullable: true },
+          required: { type: 'boolean', default: false },
+        },
+      },
+      PurposeUpdateRequest: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          required: { type: 'boolean' },
+          active: { type: 'boolean' },
+        },
+      },
+      PurposeListResponse: {
+        type: 'object',
+        properties: {
+          purposes: { type: 'array', items: { $ref: '#/components/schemas/Purpose' } },
+        },
+      },
+      PurposeSingleResponse: {
+        type: 'object',
+        properties: {
+          purpose: { $ref: '#/components/schemas/Purpose' },
+        },
+      },
+      PolicyVersion: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          tenant_id: { type: 'string', format: 'uuid' },
+          version_label: { type: 'string' },
+          policy_text: { type: 'string' },
+          document_hash: { type: 'string' },
+          effective_from: { type: 'string', format: 'date-time' },
+          is_active: { type: 'boolean' },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      PolicyVersionCreateRequest: {
+        type: 'object',
+        required: ['version', 'policy_text'],
+        properties: {
+          version: { type: 'string', description: 'Version label (e.g. v1.0)' },
+          policy_text: { type: 'string', description: 'Full policy document text' },
+          effective_from: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      PolicyVersionListResponse: {
+        type: 'object',
+        properties: {
+          policyVersions: { type: 'array', items: { $ref: '#/components/schemas/PolicyVersion' } },
+        },
+      },
+      PolicyVersionActiveResponse: {
+        type: 'object',
+        properties: {
+          policyVersion: { $ref: '#/components/schemas/PolicyVersion', nullable: true },
+        },
+      },
+      ConsentGrantRequest: {
+        type: 'object',
+        required: ['userId', 'purposeId', 'policyVersionId'],
+        properties: {
+          userId: { type: 'string', description: 'Pseudonymous user identifier' },
+          purposeId: { type: 'string', format: 'uuid' },
+          policyVersionId: { type: 'string', format: 'uuid' },
+        },
+      },
+      ConsentGrantResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Consent recorded' },
+          consentId: { type: 'string', format: 'uuid' },
+        },
+      },
+      ConsentWithdrawResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Consent withdrawn' },
+          consentId: { type: 'string', format: 'uuid' },
+        },
+      },
+      ConsentStateItem: {
+        type: 'object',
+        properties: {
+          purposeId: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['granted', 'withdrawn'] },
+          policyVersionId: { type: 'string', format: 'uuid', nullable: true },
+          timestamp: { type: 'string', format: 'date-time', description: 'ISO-8601 of latest event' },
+        },
+      },
+      ConsentStateResponse: {
+        type: 'object',
+        properties: {
+          consents: { type: 'array', items: { $ref: '#/components/schemas/ConsentStateItem' } },
+        },
+      },
+      PublicPurposeItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          required: { type: 'boolean' },
+        },
+      },
+      PublicPurposesResponse: {
+        type: 'object',
+        properties: {
+          purposes: { type: 'array', items: { $ref: '#/components/schemas/PublicPurposeItem' } },
+        },
+      },
+      PublicPolicyVersion: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          version: { type: 'string', description: 'From version_label' },
+          policy_text: { type: 'string' },
+          effective_from: { type: 'string', format: 'date', description: 'YYYY-MM-DD' },
+        },
+      },
+      PublicPolicyResponse: {
+        type: 'object',
+        properties: {
+          policyVersion: { $ref: '#/components/schemas/PublicPolicyVersion' },
+        },
+      },
+      PublicConsentGrantRequest: {
+        type: 'object',
+        description: 'Accepts camelCase (userId, purposeId, policyVersionId) or snake_case (user_id, purpose_id, policy_version_id).',
+        required: ['userId', 'purposeId', 'policyVersionId'],
+        properties: {
+          userId: { type: 'string', description: 'User identifier (camelCase)' },
+          user_id: { type: 'string', description: 'User identifier (snake_case)' },
+          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
+          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
+          policyVersionId: { type: 'string', format: 'uuid', description: 'Policy version UUID (camelCase)' },
+          policy_version_id: { type: 'string', format: 'uuid', description: 'Policy version UUID (snake_case)' },
+        },
+      },
+      PublicConsentWithdrawRequest: {
+        type: 'object',
+        description: 'Accepts camelCase (userId, purposeId) or snake_case (user_id, purpose_id).',
+        required: ['userId', 'purposeId'],
+        properties: {
+          userId: { type: 'string', description: 'User identifier (camelCase)' },
+          user_id: { type: 'string', description: 'User identifier (snake_case)' },
+          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
+          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
+        },
+      },
+      PublicConsentSuccessResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+        },
+      },
+      DsrExportResponse: {
+        type: 'object',
+        properties: {
+          user_id: { type: 'string' },
+          exported_at: { type: 'string', format: 'date-time' },
+          consents: { type: 'array' },
+          events: { type: 'array' },
+          policy_versions: { type: 'array' },
+          audit_logs: { type: 'array' },
+        },
+      },
+      PurposeDeactivateResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Purpose deactivated (soft delete)' },
+        },
+      },
     },
   },
   paths: {
@@ -339,6 +578,7 @@ const spec = {
           400: { description: 'Bad request (e.g. missing googleToken)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Invalid or expired Google token', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Account disabled (suspended/inactive)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Too many login attempts (rate limit)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -388,6 +628,76 @@ const spec = {
           400: { description: 'User already onboarded or validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           409: { description: 'Organization name or domain already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/tenant/apps': {
+      get: {
+        tags: ['Tenant'],
+        summary: 'List apps',
+        description: 'List all apps for the current tenant.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Success', content: { 'application/json': { schema: { $ref: '#/components/schemas/AppListResponse' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Tenant onboarding required', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+      post: {
+        tags: ['Tenant', 'Apps'],
+        summary: 'Create app',
+        description: 'Create an app under the tenant. Owner/admin only. Policy, consent, and DSR are then scoped to this app.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/AppCreateRequest' } } },
+        },
+        responses: {
+          201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { app: { $ref: '#/components/schemas/App' } } } } } },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          409: { description: 'Slug already exists for tenant', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/tenant/apps/{appId}': {
+      get: {
+        tags: ['Tenant', 'Apps'],
+        summary: 'Get app',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          200: { description: 'Success', content: { 'application/json': { schema: { $ref: '#/components/schemas/App' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Tenant onboarding required', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+      put: {
+        tags: ['Tenant', 'Apps'],
+        summary: 'Update app',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, slug: { type: 'string' }, status: { type: 'string', enum: ['active', 'inactive'] } } } } } },
+        responses: {
+          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { app: { $ref: '#/components/schemas/App' } } } } } },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+      delete: {
+        tags: ['Tenant', 'Apps'],
+        summary: 'Delete app',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          204: { description: 'Deleted' },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -637,23 +947,9 @@ const spec = {
         responses: {
           200: {
             description: 'Export JSON',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    user_id: { type: 'string' },
-                    exported_at: { type: 'string', format: 'date-time' },
-                    consents: { type: 'array' },
-                    events: { type: 'array' },
-                    policy_versions: { type: 'array' },
-                    audit_logs: { type: 'array' },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DsrExportResponse' } } },
           },
-          400: { description: 'Export only for access requests', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } } },
+          400: { description: 'Export only for access requests', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           404: { description: 'DSR request not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
@@ -690,119 +986,75 @@ const spec = {
         },
       },
     },
-    '/consent': {
+    '/apps/{appId}/consent': {
       post: {
-        tags: ['Consent'],
+        tags: ['Consent', 'Apps'],
         summary: 'Grant consent',
-        description: 'Record consent for a user and purpose. Creates consent identity if needed, appends GRANTED event with hash. Requires consent:write.',
+        description: 'Record consent for a user and purpose (per app). Creates consent identity if needed, appends GRANTED event. Requires consent:write.',
         security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                required: ['userId', 'purposeId', 'policyVersionId'],
-                properties: {
-                  userId: { type: 'string', description: 'Pseudonymous user identifier' },
-                  purposeId: { type: 'string', format: 'uuid' },
-                  policyVersionId: { type: 'string', format: 'uuid' },
-                },
-              },
+              schema: { $ref: '#/components/schemas/ConsentGrantRequest' },
             },
           },
         },
         responses: {
           200: {
             description: 'Consent recorded',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    message: { type: 'string', example: 'Consent recorded' },
-                    consentId: { type: 'string', format: 'uuid' },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentGrantResponse' } } },
           },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          404: { description: 'Purpose or policy version not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found, or purpose or policy version not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/consent/{userId}': {
+    '/apps/{appId}/consent/{userId}': {
       get: {
-        tags: ['Consent'],
+        tags: ['Consent', 'Apps'],
         summary: 'Get consent state (derived from events)',
-        description: 'Consent Read / Derivation Layer. Derives current consent state from consent_events (latest event per consent for tenant+user). No status stored in consents table. Audits CONSENT_READ.',
+        description: 'Derives current consent state for this app from consent_events. Audits CONSENT_READ.',
         security: [{ bearerAuth: [] }],
         parameters: [
+          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
           { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
         ],
         responses: {
           200: {
             description: 'Consent state derived from events',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    consents: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          purposeId: { type: 'string', format: 'uuid' },
-                          status: { type: 'string', enum: ['granted', 'withdrawn'] },
-                          policyVersionId: { type: 'string', format: 'uuid', nullable: true },
-                          timestamp: { type: 'string', format: 'date-time', description: 'ISO-8601 of latest event' },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentStateResponse' } } },
           },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/consent/{userId}/{purposeId}': {
+    '/apps/{appId}/consent/{userId}/{purposeId}': {
       delete: {
-        tags: ['Consent'],
+        tags: ['Consent', 'Apps'],
         summary: 'Withdraw consent (per purpose)',
-        description: 'Append WITHDRAWN event for (user, purpose). Consent identity is never deleted; state is derived from events. Idempotent: if already withdrawn, returns 200 without duplicate event. Triggers webhook. Requires consent:write.',
+        description: 'Append WITHDRAWN event for (user, purpose) in this app. Idempotent. Triggers webhook. Requires consent:write.',
         security: [{ bearerAuth: [] }],
         parameters: [
+          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
           { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
           { name: 'purposeId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Purpose UUID to withdraw' },
         ],
         responses: {
           200: {
             description: 'Consent withdrawn (or already withdrawn)',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    message: { type: 'string', example: 'Consent withdrawn' },
-                    consentId: { type: 'string', format: 'uuid' },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentWithdrawResponse' } } },
           },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          404: { description: 'Consent not found for this user and purpose', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found, or consent not found for this user and purpose', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -863,23 +1115,19 @@ const spec = {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                required: ['name'],
-                properties: {
-                  name: { type: 'string' },
-                  description: { type: 'string', nullable: true },
-                  required: { type: 'boolean', default: false },
-                },
-              },
+              schema: { $ref: '#/components/schemas/PurposeCreateRequest' },
             },
           },
         },
         responses: {
-          201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { purpose: { type: 'object' } } } } } },
+          201: {
+            description: 'Created',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PurposeSingleResponse' } } },
+          },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          409: { description: 'Purpose with this name already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
       get: {
@@ -888,7 +1136,10 @@ const spec = {
         description: 'List active purposes for tenant. Audit: PURPOSE_LIST.',
         security: [{ bearerAuth: [] }],
         responses: {
-          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { purposes: { type: 'array', items: { type: 'object' } } } } } } },
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PurposeListResponse' } } },
+          },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
@@ -900,24 +1151,19 @@ const spec = {
         summary: 'Update purpose',
         description: 'Update purpose. Owner/admin only. Audit: PURPOSE_UPDATE.',
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Purpose UUID' }],
         requestBody: {
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string' },
-                  description: { type: 'string', nullable: true },
-                  required: { type: 'boolean' },
-                  active: { type: 'boolean' },
-                },
-              },
+              schema: { $ref: '#/components/schemas/PurposeUpdateRequest' },
             },
           },
         },
         responses: {
-          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { purpose: { type: 'object' } } } } } },
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PurposeSingleResponse' } } },
+          },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
@@ -929,67 +1175,77 @@ const spec = {
         summary: 'Delete purpose (soft)',
         description: 'Set active = false. Owner/admin only. Audit: PURPOSE_DELETE.',
         security: [{ bearerAuth: [] }],
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Purpose UUID' }],
         responses: {
-          200: { description: 'Deactivated', content: { 'application/json': { schema: { type: 'object', properties: { message: { type: 'string' } } } } } },
+          200: {
+            description: 'Deactivated',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PurposeDeactivateResponse' } } },
+          },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           404: { description: 'Purpose not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/policy-versions': {
+    '/tenant/apps/{appId}/policy-versions': {
       post: {
-        tags: ['Policy Versions'],
+        tags: ['Policy Versions', 'Apps'],
         summary: 'Create policy version',
-        description: 'Deactivate previous active, create new, set is_active = true. Owner/admin only. Audit: POLICY_VERSION_CREATE.',
+        description: 'Deactivate previous active for this app, create new, set is_active = true. Owner/admin only. Audit: POLICY_VERSION_CREATE. Policy is per app.',
         security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                required: ['version', 'policy_text'],
-                properties: {
-                  version: { type: 'string' },
-                  policy_text: { type: 'string' },
-                  effective_from: { type: 'string', format: 'date-time', nullable: true },
-                },
-              },
+              schema: { $ref: '#/components/schemas/PolicyVersionCreateRequest' },
             },
           },
         },
         responses: {
-          201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { policyVersion: { type: 'object' } } } } } },
+          201: {
+            description: 'Created',
+            content: { 'application/json': { schema: { type: 'object', properties: { policyVersion: { $ref: '#/components/schemas/PolicyVersion' } } } } },
+          },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          409: { description: 'Version label already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          409: { description: 'Version label already exists for this app', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
       get: {
-        tags: ['Policy Versions'],
+        tags: ['Policy Versions', 'Apps'],
         summary: 'List policy versions',
-        description: 'All tenant policy versions, ordered by created_at desc. Owner/admin only. Audit: POLICY_VERSION_LIST.',
+        description: 'All policy versions for this app, ordered by created_at desc. Owner/admin only. Audit: POLICY_VERSION_LIST.',
         security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         responses: {
-          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { policyVersions: { type: 'array', items: { type: 'object' } } } } } } },
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PolicyVersionListResponse' } } },
+          },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/policy-versions/active': {
+    '/tenant/apps/{appId}/policy-versions/active': {
       get: {
-        tags: ['Policy Versions'],
+        tags: ['Policy Versions', 'Apps'],
         summary: 'Get active policy version',
-        description: 'Return tenant active policy. Audit: POLICY_VERSION_READ.',
+        description: 'Return active policy for this app. Audit: POLICY_VERSION_READ.',
         security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         responses: {
-          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { policyVersion: { type: 'object', nullable: true } } } } } },
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PolicyVersionActiveResponse' } } },
+          },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -1002,122 +1258,90 @@ const spec = {
         responses: {
           200: {
             description: 'Success',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    purposes: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          id: { type: 'string', format: 'uuid' },
-                          name: { type: 'string' },
-                          description: { type: 'string', nullable: true },
-                          required: { type: 'boolean' },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PublicPurposesResponse' } } },
           },
           401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Rate limit exceeded (public API)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/public/policy': {
+    '/public/apps/{appId}/policy': {
       get: {
         tags: ['Public API'],
         summary: 'Get active policy (public)',
-        description: 'Active policy version. API key required. Audit: PUBLIC_POLICY_READ.',
+        description: 'Active policy version for the app. API key required. Audit: PUBLIC_POLICY_READ. Returns null if no active policy.',
         security: [{ apiKey: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
+        ],
         responses: {
           200: {
             description: 'Success',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    policyVersion: {
-                      type: 'object',
-                      nullable: true,
-                      properties: {
-                        id: { type: 'string', format: 'uuid' },
-                        version: { type: 'string' },
-                        policy_text: { type: 'string' },
-                        effective_from: { type: 'string', format: 'date' },
-                      },
-                    },
-                  },
-                },
-              },
-            },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PublicPolicyResponse' } } },
           },
           401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Rate limit exceeded (public API)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
-    '/public/consent': {
+    '/public/apps/{appId}/consent': {
       post: {
         tags: ['Public API'],
         summary: 'Submit consent (public)',
-        description: 'Submit user consent. API key required. Audit: PUBLIC_CONSENT_GRANTED.',
+        description: 'Submit user consent for the app. API key required. Audit: PUBLIC_CONSENT_GRANTED.',
         security: [{ apiKey: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
+        ],
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                required: ['user_id', 'purpose_id', 'policy_version_id'],
-                properties: {
-                  user_id: { type: 'string' },
-                  purpose_id: { type: 'string', format: 'uuid' },
-                  policy_version_id: { type: 'string', format: 'uuid' },
-                },
-              },
+              schema: { $ref: '#/components/schemas/PublicConsentGrantRequest' },
             },
           },
         },
         responses: {
-          201: { description: 'Created', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean', example: true } } } } } },
+          201: {
+            description: 'Created',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PublicConsentSuccessResponse' } } },
+          },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          404: { description: 'Purpose or policy version not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App, purpose or policy version not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Rate limit exceeded (public API)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
       delete: {
         tags: ['Public API'],
         summary: 'Withdraw consent (public)',
-        description: 'Withdraw consent for (user_id, purpose_id). API key required. Audit: PUBLIC_CONSENT_WITHDRAWN.',
+        description: 'Withdraw consent for (user_id, purpose_id) for the app. API key required. Audit: PUBLIC_CONSENT_WITHDRAWN.',
         security: [{ apiKey: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
+        ],
         requestBody: {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                required: ['user_id', 'purpose_id'],
-                properties: {
-                  user_id: { type: 'string' },
-                  purpose_id: { type: 'string', format: 'uuid' },
-                },
-              },
+              schema: { $ref: '#/components/schemas/PublicConsentWithdrawRequest' },
             },
           },
         },
         responses: {
-          200: { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean', example: true } } } } } },
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PublicConsentSuccessResponse' } } },
+          },
           400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          404: { description: 'Consent not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App or consent not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Rate limit exceeded (public API)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
-    }
+    },
+  },
 };
 
 module.exports = spec;

@@ -1,8 +1,5 @@
 const apiKeyService = require('../services/apiKey.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 /**
  * POST /tenant/api-keys - Create API key (owner/admin). Plain key returned only once.

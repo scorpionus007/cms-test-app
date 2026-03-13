@@ -20,11 +20,16 @@ const REQUEST_TYPES = ['access', 'erasure', 'rectification'];
 const STATUSES = ['pending', 'processing', 'completed', 'rejected'];
 
 /**
- * Submit DSR (public, API key). Creates request with status pending.
+ * Submit DSR (public, API key). Creates request with status pending. App-scoped.
  */
-async function submitRequest(tenantId, body, ipAddress = null) {
+async function submitRequest(tenantId, appId, body, ipAddress = null) {
   const user_id = body.user_id != null && typeof body.user_id === 'string' ? body.user_id.trim() : '';
   const type = body.type || body.request_type;
+  if (!appId) {
+    const err = new Error('app_id is required');
+    err.statusCode = 400;
+    throw err;
+  }
   if (!user_id) {
     const err = new Error('user_id is required');
     err.statusCode = 400;
@@ -38,6 +43,7 @@ async function submitRequest(tenantId, body, ipAddress = null) {
 
   const request = await DsrRequest.create({
     tenant_id: tenantId,
+    app_id: appId,
     user_id,
     request_type: type,
     status: 'pending',
@@ -63,13 +69,13 @@ async function submitRequest(tenantId, body, ipAddress = null) {
 }
 
 /**
- * List DSR requests for tenant (admin).
+ * List DSR requests for app (admin).
  */
-async function listRequests(tenantId, options = {}) {
+async function listRequests(tenantId, appId, options = {}) {
   const page = Math.max(1, parseInt(options.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(options.limit, 10) || 20));
   const { status, request_type } = options;
-  const where = { tenant_id: tenantId };
+  const where = { tenant_id: tenantId, app_id: appId };
   if (status && STATUSES.includes(status)) where.status = status;
   if (request_type && REQUEST_TYPES.includes(request_type)) where.request_type = request_type;
 
@@ -99,11 +105,11 @@ async function listRequests(tenantId, options = {}) {
 }
 
 /**
- * Update DSR status and append lifecycle event. On completed erasure, run erasure automation.
+ * Update DSR status and append lifecycle event. On completed erasure, run erasure automation. App-scoped.
  */
-async function updateStatus(tenantId, dsrId, body, actorClientId, ipAddress = null) {
+async function updateStatus(tenantId, appId, dsrId, body, actorClientId, ipAddress = null) {
   const request = await DsrRequest.findOne({
-    where: { id: dsrId, tenant_id: tenantId },
+    where: { id: dsrId, tenant_id: tenantId, app_id: appId },
   });
   if (!request) {
     const err = new Error('DSR request not found');
@@ -139,7 +145,7 @@ async function updateStatus(tenantId, dsrId, body, actorClientId, ipAddress = nu
   });
 
   if (newStatus === 'completed' && request.request_type === 'erasure') {
-    await executeErasure(tenantId, request.user_id, request.id, actorClientId, ipAddress);
+    await executeErasure(tenantId, appId, request.user_id, request.id, actorClientId, ipAddress);
     webhookDispatcher.dispatch({
       event: 'dsr.completed',
       tenant_id: tenantId,
@@ -163,11 +169,11 @@ async function updateStatus(tenantId, dsrId, body, actorClientId, ipAddress = nu
 }
 
 /**
- * Export all data for a user (access request). Returns consents, events, purposes, policy versions, audit logs.
+ * Export all data for a user (access request). App-scoped.
  */
-async function exportData(tenantId, dsrId, actorClientId, ipAddress = null) {
+async function exportData(tenantId, appId, dsrId, actorClientId, ipAddress = null) {
   const request = await DsrRequest.findOne({
-    where: { id: dsrId, tenant_id: tenantId },
+    where: { id: dsrId, tenant_id: tenantId, app_id: appId },
   });
   if (!request) {
     const err = new Error('DSR request not found');
@@ -183,7 +189,7 @@ async function exportData(tenantId, dsrId, actorClientId, ipAddress = null) {
   const userId = request.user_id;
 
   const consents = await Consent.findAll({
-    where: { tenant_id: tenantId, user_id: userId },
+    where: { tenant_id: tenantId, app_id: appId, user_id: userId },
     attributes: ['id', 'user_id', 'purpose_id', 'created_at'],
   });
 
@@ -264,13 +270,13 @@ async function exportData(tenantId, dsrId, actorClientId, ipAddress = null) {
 }
 
 /**
- * Execute erasure: delete user consent records, events, cache; anonymize audit logs.
+ * Execute erasure: delete user consent records (for this app), events, cache; anonymize audit logs.
  */
-async function executeErasure(tenantId, userId, dsrRequestId, actorClientId, ipAddress = null) {
+async function executeErasure(tenantId, appId, userId, dsrRequestId, actorClientId, ipAddress = null) {
   const transaction = await sequelize.transaction();
   try {
     const consents = await Consent.findAll({
-      where: { tenant_id: tenantId, user_id: userId },
+      where: { tenant_id: tenantId, app_id: appId, user_id: userId },
       attributes: ['id'],
       transaction,
     });
@@ -280,11 +286,11 @@ async function executeErasure(tenantId, userId, dsrRequestId, actorClientId, ipA
       await ConsentEvent.destroy({ where: { consent_id: consentIds }, transaction });
     }
     await ConsentStateCache.destroy({
-      where: { tenant_id: tenantId, user_id: userId },
+      where: { tenant_id: tenantId, app_id: appId, user_id: userId },
       transaction,
     });
     await Consent.destroy({
-      where: { tenant_id: tenantId, user_id: userId },
+      where: { tenant_id: tenantId, app_id: appId, user_id: userId },
       transaction,
     });
 

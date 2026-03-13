@@ -1,13 +1,12 @@
 const policyVersionService = require('../services/policyVersion.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 async function create(req, res, next) {
   try {
+    const appId = req.appId || req.params.appId;
     const policyVersion = await policyVersionService.createPolicyVersion(
       req.user.tenant_id,
+      appId,
       req.user.client_id,
       req.body,
       getClientIp(req)
@@ -20,8 +19,10 @@ async function create(req, res, next) {
 
 async function getActive(req, res, next) {
   try {
+    const appId = req.appId || req.params.appId;
     const policyVersion = await policyVersionService.getActivePolicyVersion(
       req.user.tenant_id,
+      appId,
       req.user.client_id,
       getClientIp(req)
     );
@@ -33,8 +34,10 @@ async function getActive(req, res, next) {
 
 async function list(req, res, next) {
   try {
+    const appId = req.appId || req.params.appId;
     const policyVersions = await policyVersionService.listPolicyVersions(
       req.user.tenant_id,
+      appId,
       req.user.client_id,
       getClientIp(req)
     );

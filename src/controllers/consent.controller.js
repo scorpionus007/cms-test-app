@@ -1,15 +1,13 @@
 const consentService = require('../services/consent.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 /**
  * GET /consent/:userId - Get current consent state from cache
  */
 async function getState(req, res, next) {
   try {
-    const items = await consentService.getConsentState(req.user.tenant_id, req.params.userId);
+    const appId = req.appId || req.params.appId;
+    const items = await consentService.getConsentState(req.user.tenant_id, appId, req.params.userId);
     res.status(200).json({ userId: req.params.userId.trim(), consents: items });
   } catch (err) {
     next(err);
@@ -17,12 +15,14 @@ async function getState(req, res, next) {
 }
 
 /**
- * POST /consent - Grant consent
+ * POST /consent - Grant consent (app-scoped)
  */
 async function grant(req, res, next) {
   try {
+    const appId = req.appId || req.params.appId;
     const result = await consentService.grantConsent(
       req.user.tenant_id,
+      appId,
       req.user.client_id,
       req.body,
       getClientIp(req)
@@ -37,12 +37,14 @@ async function grant(req, res, next) {
 }
 
 /**
- * DELETE /consent/:userId/:purposeId - Withdraw consent for (user, purpose). Appends WITHDRAWN event; no DELETE on consents.
+ * DELETE /consent/:userId/:purposeId - Withdraw consent for (user, purpose). App-scoped.
  */
 async function withdraw(req, res, next) {
   try {
+    const appId = req.appId || req.params.appId;
     const result = await consentService.withdrawConsent(
       req.user.tenant_id,
+      appId,
       req.params.userId,
       req.params.purposeId,
       req.user.client_id,

@@ -1,9 +1,6 @@
 const consentReadService = require('../services/consentRead.service');
 const auditService = require('../services/audit.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 /**
  * GET /consent/:userId — Derive current consent state from consent_events.
@@ -12,9 +9,10 @@ function getClientIp(req) {
 async function getState(req, res, next) {
   try {
     const tenantId = req.user.tenant_id;
+    const appId = req.appId || req.params.appId;
     const userId = req.params.userId.trim();
 
-    const consents = await consentReadService.getConsentStateDerived(tenantId, userId);
+    const consents = await consentReadService.getConsentStateDerived(tenantId, appId, userId);
 
     await auditService.logAction({
       tenant_id: tenantId,

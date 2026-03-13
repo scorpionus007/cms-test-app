@@ -3,9 +3,7 @@
  */
 const logger = require('../config/logger');
 
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 function requestLogger(req, res, next) {
   const start = Date.now();

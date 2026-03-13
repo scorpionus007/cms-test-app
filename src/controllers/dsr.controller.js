@@ -1,8 +1,5 @@
 const dsrService = require('../services/dsr.service');
-
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 /**
  * POST /dsr/request (public, API key) or POST /public/dsr/request
@@ -10,7 +7,8 @@ function getClientIp(req) {
 async function submitRequest(req, res, next) {
   try {
     const tenantId = req.tenant.id;
-    const result = await dsrService.submitRequest(tenantId, req.body, getClientIp(req));
+    const appId = req.body.app_id || req.params.appId;
+    const result = await dsrService.submitRequest(tenantId, appId, req.body, getClientIp(req));
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -18,13 +16,14 @@ async function submitRequest(req, res, next) {
 }
 
 /**
- * GET /dsr (JWT, admin) - list requests for tenant
+ * GET /dsr (JWT, admin) - list requests for app
  */
 async function list(req, res, next) {
   try {
     const tenantId = req.user.tenant_id;
+    const appId = req.appId || req.params.appId;
     const { status, request_type, page, limit } = req.query;
-    const result = await dsrService.listRequests(tenantId, {
+    const result = await dsrService.listRequests(tenantId, appId, {
       status,
       request_type,
       page,
@@ -42,9 +41,10 @@ async function list(req, res, next) {
 async function updateStatus(req, res, next) {
   try {
     const tenantId = req.user.tenant_id;
+    const appId = req.appId || req.params.appId;
     const clientId = req.user.client_id;
     const dsrId = req.params.id;
-    const result = await dsrService.updateStatus(tenantId, dsrId, req.body, clientId, getClientIp(req));
+    const result = await dsrService.updateStatus(tenantId, appId, dsrId, req.body, clientId, getClientIp(req));
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -57,9 +57,10 @@ async function updateStatus(req, res, next) {
 async function exportData(req, res, next) {
   try {
     const tenantId = req.user.tenant_id;
+    const appId = req.appId || req.params.appId;
     const clientId = req.user.client_id;
     const dsrId = req.params.id;
-    const result = await dsrService.exportData(tenantId, dsrId, clientId, getClientIp(req));
+    const result = await dsrService.exportData(tenantId, appId, dsrId, clientId, getClientIp(req));
     res.status(200).json(result);
   } catch (err) {
     next(err);

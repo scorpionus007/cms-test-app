@@ -14,15 +14,8 @@ Make sure the MySQL server is running and you know the root password (or a user 
 2. Run the installer; set a **root password** and remember it.
 3. Ensure MySQL is running (e.g. Windows Services → MySQL80, or run `net start MySQL80` in an elevated prompt).
 
-### Option C: Docker
-```bash
-docker run -d --name mysql-cms -p 3306:3306 -e MYSQL_ROOT_PASSWORD=yourpassword -e MYSQL_DATABASE=securedapp_cms mysql:8
-```
-Then use `DB_PASSWORD=yourpassword` and `DB_NAME=securedapp_cms`.
 
----
-
-## 2. Create the database (if not using Docker with MYSQL_DATABASE)
+## 2. Create the database
 
 ### Option A: Using Node (no MySQL CLI needed)
 

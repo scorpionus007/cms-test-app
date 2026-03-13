@@ -33,12 +33,11 @@ async function listPurposes(tenantId, ipAddress = null) {
 }
 
 /**
- * Get active policy version. Audit: PUBLIC_POLICY_READ.
- * Response uses "version" (from version_label) per spec.
+ * Get active policy version for app. Audit: PUBLIC_POLICY_READ.
  */
-async function getActivePolicy(tenantId, ipAddress = null) {
+async function getActivePolicy(tenantId, appId, ipAddress = null) {
   const row = await PolicyVersion.findOne({
-    where: { tenant_id: tenantId, is_active: true },
+    where: { tenant_id: tenantId, app_id: appId, is_active: true },
     attributes: ['id', 'version_label', 'policy_text', 'effective_from'],
   });
   await auditService.logAction({
@@ -60,26 +59,27 @@ async function getActivePolicy(tenantId, ipAddress = null) {
 }
 
 /**
- * Submit user consent. Delegates to consent.service with PUBLIC_CONSENT_GRANTED audit.
+ * Submit user consent for app. Delegates to consent.service with PUBLIC_CONSENT_GRANTED audit.
  */
-async function grantConsent(tenantId, body, ipAddress = null) {
+async function grantConsent(tenantId, appId, body, ipAddress = null) {
   const mapped = {
     userId: body.user_id,
     purposeId: body.purpose_id,
     policyVersionId: body.policy_version_id,
   };
-  await consentService.grantConsent(tenantId, null, mapped, ipAddress, {
+  await consentService.grantConsent(tenantId, appId, null, mapped, ipAddress, {
     auditActionGranted: 'PUBLIC_CONSENT_GRANTED',
   });
   return { success: true };
 }
 
 /**
- * Withdraw consent for (user_id, purpose_id). Delegates to consent.service with PUBLIC_CONSENT_WITHDRAWN audit.
+ * Withdraw consent for (user_id, purpose_id). App-scoped.
  */
-async function withdrawConsent(tenantId, body, ipAddress = null) {
+async function withdrawConsent(tenantId, appId, body, ipAddress = null) {
   await consentService.withdrawConsent(
     tenantId,
+    appId,
     body.user_id,
     body.purpose_id,
     null,

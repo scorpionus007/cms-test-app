@@ -10,6 +10,11 @@ module.exports = (sequelize) => {
         primaryKey: true,
         references: { model: 'tenants', key: 'id' },
       },
+      app_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'apps', key: 'id' },
+      },
       user_id: {
         type: DataTypes.STRING(255),
         allowNull: false,
@@ -41,7 +46,10 @@ module.exports = (sequelize) => {
       tableName: 'consent_state_cache',
       underscored: true,
       timestamps: false,
-      indexes: [{ fields: ['tenant_id', 'user_id'] }],
+      indexes: [
+        { fields: ['tenant_id', 'app_id', 'user_id'] },
+        { unique: true, fields: ['tenant_id', 'app_id', 'user_id', 'purpose_id'] },
+      ],
     }
   );
   return ConsentStateCache;

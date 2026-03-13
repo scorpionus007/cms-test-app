@@ -1,9 +1,7 @@
 const authService = require('../services/auth.service');
 const auditService = require('../services/audit.service');
 
-function getClientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || null;
-}
+const getClientIp = require('../utils/getClientIp');
 
 /**
  * POST /auth/google-login

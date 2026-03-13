@@ -3,6 +3,7 @@ const { body, param, query } = require('express-validator');
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const submitValidation = [
+  body('app_id').trim().notEmpty().withMessage('app_id is required').matches(UUID_REGEX).withMessage('app_id must be a valid UUID'),
   body('user_id').trim().notEmpty().withMessage('user_id is required'),
   body('type')
     .optional()

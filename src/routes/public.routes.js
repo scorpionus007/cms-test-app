@@ -1,6 +1,7 @@
 const express = require('express');
 const publicConsentController = require('../controllers/publicConsent.controller');
 const { authenticateApiKey } = require('../middleware/apiKey.middleware');
+const { requireAppPublic } = require('../middleware/app.middleware');
 const { publicLimiter } = require('../config/security');
 const {
   grantConsentValidation,
@@ -13,21 +14,15 @@ const router = express.Router();
 router.use(publicLimiter);
 router.use(authenticateApiKey);
 
+// Tenant-level: purposes are shared across all apps
 router.get('/purposes', publicConsentController.getPurposes);
-router.get('/policy', publicConsentController.getPolicy);
 
-router.post(
-  '/consent',
-  grantConsentValidation,
-  handleValidationErrors,
-  publicConsentController.grantConsent
-);
-
-router.delete(
-  '/consent',
-  withdrawConsentValidation,
-  handleValidationErrors,
-  publicConsentController.withdrawConsent
-);
+// App-scoped: policy and consent (require appId in path)
+const appPublicRouter = express.Router({ mergeParams: true });
+appPublicRouter.use(requireAppPublic);
+appPublicRouter.get('/policy', publicConsentController.getPolicy);
+appPublicRouter.post('/consent', grantConsentValidation, handleValidationErrors, publicConsentController.grantConsent);
+appPublicRouter.delete('/consent', withdrawConsentValidation, handleValidationErrors, publicConsentController.withdrawConsent);
+router.use('/apps/:appId', appPublicRouter);
 
 module.exports = router;

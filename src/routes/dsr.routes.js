@@ -12,7 +12,7 @@ const {
 
 const router = express.Router();
 
-// Public (API key): submit DSR request
+// Public (API key): submit DSR request. Body must include app_id.
 router.post(
   '/request',
   publicLimiter,
@@ -22,30 +22,25 @@ router.post(
   dsrController.submitRequest
 );
 
-// Admin (JWT): list, update status, export
-router.get(
+// Admin (JWT, app-scoped): list, update status, export. Mount at /tenant/apps/:appId/dsr (requireApp sets req.appId).
+const adminRouter = express.Router();
+adminRouter.get(
   '/',
-  authenticate,
-  requireTenant,
   authorize('dsr:submit'),
   listQueryValidation,
   handleValidationErrors,
   dsrController.list
 );
-router.patch(
+adminRouter.patch(
   '/:id',
-  authenticate,
-  requireTenant,
   authorize('dsr:submit'),
   idParamValidation,
   updateStatusValidation,
   handleValidationErrors,
   dsrController.updateStatus
 );
-router.get(
+adminRouter.get(
   '/:id/export',
-  authenticate,
-  requireTenant,
   authorize('dsr:submit'),
   idParamValidation,
   handleValidationErrors,
@@ -53,3 +48,4 @@ router.get(
 );
 
 module.exports = router;
+module.exports.adminRouter = adminRouter;

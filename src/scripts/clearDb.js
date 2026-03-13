@@ -15,14 +15,15 @@ const TABLES = [
   'consents',
   'dsr_events',
   'dsr_requests',
-  'purposes',
   'policy_versions',
+  'purposes',
   'api_keys',
   'clients',
   'webhook_deliveries',
   'webhooks',
   'audit_logs',
   'breach_reports',
+  'apps',
   'tenants',
 ];
 
