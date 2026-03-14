@@ -37,6 +37,7 @@ const db = {
   AuditLog: require('./auditLog')(sequelize),
   BreachReport: require('./breachReport')(sequelize),
   ApiKey: require('./apiKey')(sequelize),
+  DataCatalog: require('./dataCatalog')(sequelize),
 };
 
 // Tenant -> Client

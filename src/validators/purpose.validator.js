@@ -12,6 +12,11 @@ const createPurposeValidation = [
     .withMessage('name must be a string'),
   body('description').optional().trim().isString().withMessage('description must be a string'),
   body('required').optional().isBoolean().withMessage('required must be a boolean'),
+  body('purpose_id').optional().trim().isString().withMessage('purpose_id must be a string'),
+  body('required_data').optional().isArray().withMessage('required_data must be an array'),
+  body('required_data.*').optional().isString().withMessage('required_data items must be strings'),
+  body('validity_days').optional().isInt({ min: 0 }).withMessage('validity_days must be a non-negative integer'),
+  body('permissions').optional().isObject().withMessage('permissions must be an object'),
 ];
 
 const updatePurposeValidation = [
@@ -20,6 +25,11 @@ const updatePurposeValidation = [
   body('description').optional().trim().isString().withMessage('description must be a string'),
   body('required').optional().isBoolean().withMessage('required must be a boolean'),
   body('active').optional().isBoolean().withMessage('active must be a boolean'),
+  body('purpose_id').optional().trim().isString().withMessage('purpose_id must be a string'),
+  body('required_data').optional().isArray().withMessage('required_data must be an array'),
+  body('required_data.*').optional().isString().withMessage('required_data items must be strings'),
+  body('validity_days').optional().isInt({ min: 0 }).withMessage('validity_days must be a non-negative integer'),
+  body('permissions').optional().isObject().withMessage('permissions must be an object'),
 ];
 
 const purposeIdParamValidation = [

@@ -5,6 +5,7 @@ const tenantRoutes = require('./routes/tenant.routes');
 const clientRoutes = require('./routes/client.routes');
 const auditRoutes = require('./routes/audit.routes');
 const purposeRoutes = require('./routes/purpose.routes');
+const dataCatalogRoutes = require('./routes/dataCatalog.routes');
 const webhookRoutes = require('./routes/webhook.routes');
 const dsrRoutes = require('./routes/dsr.routes');
 const appsRoutes = require('./routes/apps.routes');
@@ -50,6 +51,7 @@ app.use('/tenant', tenantRoutes);
 app.use('/clients', clientRoutes);
 app.use('/audit-logs', auditRoutes);
 app.use('/purposes', purposeRoutes);
+app.use('/data-catalog', dataCatalogRoutes);
 app.use('/webhooks', webhookRoutes);
 // Consent is per app: mount at /apps/:appId so req.params.appId is set
 app.use('/apps/:appId', appsRoutes);

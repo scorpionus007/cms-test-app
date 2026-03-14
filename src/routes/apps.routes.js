@@ -18,6 +18,23 @@ const router = express.Router({ mergeParams: true });
 
 router.use(authenticate, requireTenant, requireApp);
 
+// GET /apps/:appId/consent/:userId/artifact - consent artifact (purpose id, data_ids, audit, signature)
+router.get(
+  '/consent/:userId/artifact',
+  authorize('consent:write'),
+  getConsentParamValidation,
+  handleValidationErrors,
+  consentReadController.getArtifact
+);
+// GET /apps/:appId/consent/:userId/export - legacy export shape
+router.get(
+  '/consent/:userId/export',
+  authorize('consent:write'),
+  getConsentParamValidation,
+  handleValidationErrors,
+  consentReadController.getExport
+);
+
 // GET /apps/:appId/consent/:userId - derived consent state
 router.get(
   '/consent/:userId',

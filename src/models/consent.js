@@ -30,6 +30,25 @@ module.exports = (sequelize) => {
         allowNull: false,
         references: { model: 'purposes', key: 'id' },
       },
+      policy_version_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'policy_versions', key: 'id' },
+        comment: 'Policy version at time of grant',
+      },
+      granted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      status: {
+        type: DataTypes.ENUM('ACTIVE', 'WITHDRAWN', 'EXPIRED'),
+        allowNull: true,
+        defaultValue: 'ACTIVE',
+      },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,

@@ -17,6 +17,7 @@ const TABLES = [
   'dsr_requests',
   'policy_versions',
   'purposes',
+  'data_catalog',
   'api_keys',
   'clients',
   'webhook_deliveries',

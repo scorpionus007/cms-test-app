@@ -76,7 +76,7 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
   }
 
   const normalizedUserId = userId.trim();
-  await validatePurpose(tenantId, purposeId);
+  const purpose = await validatePurpose(tenantId, purposeId);
   await validatePolicyVersion(tenantId, appId, policyVersionId);
 
   let consent = await Consent.findOne({
@@ -88,12 +88,27 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     },
   });
 
+  const now = new Date();
+  const validityDays = purpose.validity_days != null ? purpose.validity_days : null;
+  const expiresAt = validityDays != null ? new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000) : null;
+
   if (!consent) {
     consent = await Consent.create({
       tenant_id: tenantId,
       app_id: appId,
       user_id: normalizedUserId,
       purpose_id: purposeId,
+      policy_version_id: policyVersionId,
+      granted_at: now,
+      expires_at: expiresAt,
+      status: 'ACTIVE',
+    });
+  } else {
+    await consent.update({
+      policy_version_id: policyVersionId,
+      granted_at: now,
+      expires_at: expiresAt,
+      status: 'ACTIVE',
     });
   }
 
@@ -103,7 +118,6 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     attributes: ['event_hash'],
   });
   const previousHash = latestEvent ? latestEvent.event_hash : null;
-  const now = new Date();
   const eventHash = computeEventHash(consent.id, 'GRANTED', policyVersionId, previousHash, now);
 
   await ConsentEvent.create({
@@ -214,6 +228,8 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
     previous_hash: previousHash,
     event_hash: eventHash,
   });
+
+  await consent.update({ status: 'WITHDRAWN' });
 
   await ConsentStateCache.upsert({
     tenant_id: tenantId,

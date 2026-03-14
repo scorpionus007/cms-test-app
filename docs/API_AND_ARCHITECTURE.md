@@ -26,7 +26,10 @@ Complete reference for the DPDP-oriented multi-tenant consent and audit backend:
 | `/apps/:appId/consent` | Consent (grant, get state, withdraw) **per app** |
 | `/clients` | Client (user) management (tenant-level, shared across apps) |
 | `/audit-logs` | Audit log listing |
-| `/purposes` | Purposes (tenant-level, shared across apps) |
+| `/purposes` | Purposes (tenant-level, shared across apps; supports purpose_code, version_label, required_data) |
+| `/data-catalog` | Platform-wide data catalog (read-only; data_id list for purposes) |
+| `/apps/:appId/consent/:userId/artifact` | Consent artifact (purpose id, data_ids, audit, signature, status) |
+| `/apps/:appId/consent/:userId/export` | Legacy consent export |
 | `/dsr/request` | Public DSR submit (body must include `app_id`) |
 | `/public/purposes` | Public: list purposes (tenant) |
 | `/public/apps/:appId/policy` | Public: active policy for app |
@@ -137,7 +140,27 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.4 `purposes`
+### 3.4 `data_catalog`
+
+Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes via `required_data` (array of `data_id`).
+
+| Column | Type | Nullable | Default | Description |
+|--------|------|----------|---------|-------------|
+| `id` | UUID | NO | UUIDV4 | Primary key |
+| `data_id` | VARCHAR(100) | NO | - | Stable ID (e.g. AADHAAR_NUMBER); unique |
+| `category` | VARCHAR(100) | YES | - | e.g. identity, address |
+| `description` | TEXT | YES | - | Description |
+| `sensitivity` | ENUM('LOW','MEDIUM','HIGH') | YES | - | Sensitivity |
+| `max_validity_days` | INT | YES | - | Max consent validity days for this data type (DPDP); purpose.validity_days cannot exceed min of required_data |
+| `status` | ENUM('active','inactive') | NO | 'active' | Status |
+| `created_at` | DATE | NO | NOW | Created at |
+| `updated_at` | DATE | NO | NOW | Updated at |
+
+**Indexes:** Unique `data_id`; `status`. **Seed:** Run `npm run db:seed-catalog` after sync.
+
+---
+
+### 3.5 `purposes`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -145,16 +168,21 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 | `tenant_id` | UUID | NO | - | FK → tenants.id |
 | `name` | VARCHAR(255) | NO | - | Purpose name |
 | `description` | TEXT | YES | - | Description |
-| `purpose_code` | VARCHAR(100) | YES | - | Code |
+| `required` | BOOLEAN | NO | false | Required for consent banner |
+| `purpose_id` | VARCHAR(100) | YES | - | Stable purpose id (e.g. KYC_AADHAAR); unique per tenant |
+| `required_data` | JSON | YES | - | Array of data_id from data_catalog |
+| `permissions` | JSON | YES | - | e.g. allowed_access, allowed_frequency |
+| `validity_days` | INT | YES | - | Consent validity days; must be <= min of data_catalog.max_validity_days for required_data |
 | `retention_days` | INT | YES | - | Retention in days |
 | `active` | BOOLEAN | NO | true | Active flag |
 | `created_at` | DATE | NO | NOW | Created at |
+| `updated_at` | DATE | NO | NOW | Updated at |
 
-**Indexes:** `tenant_id`.
+**Indexes:** `tenant_id`; unique `(tenant_id, name)`; unique `(tenant_id, purpose_id)`.
 
 ---
 
-### 3.5 `policy_versions`
+### 3.6 `policy_versions`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -169,23 +197,28 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.6 `consents`
+### 3.7 `consents`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
 | `id` | UUID | NO | UUIDV4 | Primary key |
 | `tenant_id` | UUID | NO | - | FK → tenants.id |
+| `app_id` | UUID | YES | - | FK → apps.id (per-app consent) |
 | `user_id` | VARCHAR(255) | NO | - | Pseudonymous user identifier |
 | `purpose_id` | UUID | NO | - | FK → purposes.id |
+| `policy_version_id` | UUID | YES | - | Policy version at grant |
+| `granted_at` | DATE | YES | - | When granted |
+| `expires_at` | DATE | YES | - | When expires (from purpose.validity_days) |
+| `status` | ENUM('ACTIVE','WITHDRAWN','EXPIRED') | YES | ACTIVE | Current status |
 | `created_at` | DATE | NO | NOW | Created at |
 
-**Indexes:** `tenant_id`; Unique `(tenant_id, user_id, purpose_id)`; `idx_consent_lookup (tenant_id, user_id)`.
+**Indexes:** `tenant_id`; `app_id`; unique `(tenant_id, app_id, user_id, purpose_id)`; `idx_consent_lookup (tenant_id, app_id, user_id)`.
 
 **Rules:** No status column; consent rows are never deleted. Source of truth for “identity” only; state comes from events.
 
 ---
 
-### 3.7 `consent_events`
+### 3.8 `consent_events`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -204,7 +237,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.8 `consent_state_cache`
+### 3.9 `consent_state_cache`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -221,7 +254,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.9 `audit_logs`
+### 3.10 `audit_logs`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -241,7 +274,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.10 `webhooks`
+### 3.11 `webhooks`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -257,7 +290,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.11 `dsr_requests`
+### 3.12 `dsr_requests`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -272,7 +305,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.12 `dsr_events`
+### 3.13 `dsr_events`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -286,7 +319,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.13 `breach_reports`
+### 3.14 `breach_reports`
 
 | Column | Type | Nullable | Default | Description |
 |--------|------|----------|---------|-------------|
@@ -301,7 +334,7 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ---
 
-### 3.14 Entity Relationship Summary
+### 3.15 Entity Relationship Summary
 
 - **Tenant** → has many: Client, Purpose, PolicyVersion, Consent, ConsentStateCache, Webhook, AuditLog, DsrRequest, BreachReport.
 - **Client** → belongs to Tenant.

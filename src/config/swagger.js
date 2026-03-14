@@ -15,11 +15,12 @@ const spec = {
 3. **Tenant** – \`GET /tenant/me\`, \`GET /auth/me\` for current tenant/user. Create API keys: \`POST /tenant/api-keys\`, \`GET /tenant/api-keys\`, \`DELETE /tenant/api-keys/:id\`.
 4. **Apps** – \`GET /tenant/apps\`, \`POST /tenant/apps\` (name, slug), \`GET/PUT/DELETE /tenant/apps/:appId\`. Policy and DSR admin are per app.
 5. **Purposes** – \`POST /purposes\`, \`GET /purposes\`, \`PUT /purposes/:id\`, \`DELETE /purposes/:id\` (tenant-level, shared by apps).
-6. **Policy versions (per app)** – \`POST /tenant/apps/:appId/policy-versions\`, \`GET /tenant/apps/:appId/policy-versions/active\`, \`GET /tenant/apps/:appId/policy-versions\`.
-7. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent/:userId/:purposeId\`.
-8. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\`.
-9. **DSR** – Public: \`POST /dsr/request\` (body: **app_id**, user_id, type/request_type). Admin: \`GET /tenant/apps/:appId/dsr\`, \`PATCH /tenant/apps/:appId/dsr/:id\`, \`GET /tenant/apps/:appId/dsr/:id/export\`.
-10. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\`. **Audit** – \`GET /audit-logs\` (owner/admin).`,
+6. **Data catalog** – \`GET /data-catalog\`, \`GET /data-catalog/:dataId\` (platform-wide, read-only).
+7. **Policy versions (per app)** – \`POST /tenant/apps/:appId/policy-versions\`, \`GET /tenant/apps/:appId/policy-versions/active\`, \`GET /tenant/apps/:appId/policy-versions\`.
+8. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent/:userId/:purposeId\`.
+9. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\`.
+10. **DSR** – Public: \`POST /dsr/request\` (body: **app_id**, user_id, type/request_type). Admin: \`GET /tenant/apps/:appId/dsr\`, \`PATCH /tenant/apps/:appId/dsr/:id\`, \`GET /tenant/apps/:appId/dsr/:id/export\`.
+11. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\`. **Audit** – \`GET /audit-logs\` (owner/admin).`,
     version: '1.0.0',
   },
   servers: [
@@ -33,6 +34,7 @@ const spec = {
     { name: 'Audit', description: 'Audit logs (owner/admin)' },
     { name: 'Consent', description: 'Consent identity and events (event-sourced)' },
     { name: 'Purposes', description: 'Consent purposes (tenant-scoped)' },
+    { name: 'Data Catalog', description: 'Platform-wide data catalog (data_id reference for purposes)' },
     { name: 'Policy Versions', description: 'Policy versions (tenant-scoped)' },
     { name: 'Webhooks', description: 'Webhook endpoints (notify external systems on events)' },
     { name: 'DSR', description: 'Data Subject Requests (access, erasure, rectification)' },
@@ -362,7 +364,10 @@ const spec = {
           name: { type: 'string' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
-          purpose_code: { type: 'string', nullable: true },
+          purpose_id: { type: 'string', nullable: true, description: 'Stable purpose id e.g. KYC_AADHAAR' },
+          required_data: { type: 'array', items: { type: 'string' }, nullable: true, description: 'Data catalog data_id list' },
+          permissions: { type: 'object', nullable: true },
+          validity_days: { type: 'integer', nullable: true, description: 'Must be <= min of data_catalog.max_validity_days for required_data' },
           retention_days: { type: 'integer', nullable: true },
           active: { type: 'boolean' },
           created_at: { type: 'string', format: 'date-time' },
@@ -376,6 +381,10 @@ const spec = {
           name: { type: 'string', example: 'Analytics' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean', default: false },
+          purpose_id: { type: 'string', nullable: true, example: 'KYC_AADHAAR' },
+          required_data: { type: 'array', items: { type: 'string' }, nullable: true, example: ['AADHAAR_NUMBER', 'AADHAAR_ADDRESS'] },
+          validity_days: { type: 'integer', nullable: true },
+          permissions: { type: 'object', nullable: true },
         },
       },
       PurposeUpdateRequest: {
@@ -385,6 +394,10 @@ const spec = {
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
           active: { type: 'boolean' },
+          purpose_id: { type: 'string', nullable: true },
+          required_data: { type: 'array', items: { type: 'string' }, nullable: true },
+          validity_days: { type: 'integer', nullable: true },
+          permissions: { type: 'object', nullable: true },
         },
       },
       PurposeListResponse: {
@@ -472,6 +485,44 @@ const spec = {
           consents: { type: 'array', items: { $ref: '#/components/schemas/ConsentStateItem' } },
         },
       },
+      ConsentExportResponse: {
+        type: 'object',
+        description: 'Legacy export shape.',
+        properties: {
+          dataPrincipal: { type: 'object', properties: { id: { type: 'string' } } },
+          dataFiduciary: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+          consents: { type: 'array', items: { type: 'object' } },
+        },
+      },
+      ConsentArtifactResponse: {
+        type: 'object',
+        description: 'Consent artifact: consentId, dataPrincipal, dataFiduciary, purpose (id, text), data_ids, audit, signature, status.',
+        properties: {
+          consentArtifacts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                consentArtifact: {
+                  type: 'object',
+                  properties: {
+                    consentId: { type: 'string', format: 'uuid' },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    dataPrincipal: { type: 'object', properties: { id: { type: 'string' } } },
+                    dataFiduciary: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
+                    purpose: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string', nullable: true } } },
+                    policy_version_id: { type: 'string', format: 'uuid', nullable: true },
+                    data: { type: 'object', properties: { data_ids: { type: 'array', items: { type: 'string' } } } },
+                    audit: { type: 'object', properties: { consentMethod: { type: 'string' }, timestamp: { type: 'string' }, createdBy: { type: 'string' }, ipAddress: { type: 'string', nullable: true } } },
+                    signature: { type: 'object', properties: { type: { type: 'string' }, algorithm: { type: 'string' }, value: { type: 'string', nullable: true } } },
+                    status: { type: 'string', enum: ['ACTIVE', 'WITHDRAWN'] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       PublicPurposeItem: {
         type: 'object',
         properties: {
@@ -479,6 +530,10 @@ const spec = {
           name: { type: 'string' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
+          purpose_id: { type: 'string', nullable: true },
+          required_data: { type: 'array', items: { type: 'string' }, nullable: true },
+          validity_days: { type: 'integer', nullable: true },
+          permissions: { type: 'object', nullable: true },
         },
       },
       PublicPurposesResponse: {
@@ -548,6 +603,26 @@ const spec = {
         type: 'object',
         properties: {
           message: { type: 'string', example: 'Purpose deactivated (soft delete)' },
+        },
+      },
+      DataCatalogEntry: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          data_id: { type: 'string', example: 'AADHAAR_NUMBER' },
+          category: { type: 'string', example: 'identity' },
+          description: { type: 'string', nullable: true },
+          sensitivity: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+          max_validity_days: { type: 'integer', nullable: true, description: 'Max consent validity days for this data type' },
+          status: { type: 'string', enum: ['active', 'inactive'] },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      DataCatalogListResponse: {
+        type: 'object',
+        properties: {
+          data_catalog: { type: 'array', items: { $ref: '#/components/schemas/DataCatalogEntry' } },
         },
       },
     },
@@ -1035,6 +1110,50 @@ const spec = {
         },
       },
     },
+    '/apps/{appId}/consent/{userId}/artifact': {
+      get: {
+        tags: ['Consent', 'Apps'],
+        summary: 'Get consent artifact',
+        description: 'Consent artifact: consentId, dataPrincipal (userId), dataFiduciary (tenantId), purpose (id, text), data_ids, audit, signature, status (ACTIVE/WITHDRAWN).',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
+        ],
+        responses: {
+          200: {
+            description: 'Consent artifacts',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentArtifactResponse' } } },
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/apps/{appId}/consent/{userId}/export': {
+      get: {
+        tags: ['Consent', 'Apps'],
+        summary: 'Get consent export (legacy)',
+        description: 'Legacy export shape. Prefer GET /artifact.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
+          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
+        ],
+        responses: {
+          200: {
+            description: 'Consent export',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentExportResponse' } } },
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
     '/apps/{appId}/consent/{userId}/{purposeId}': {
       delete: {
         tags: ['Consent', 'Apps'],
@@ -1102,6 +1221,40 @@ const spec = {
           },
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden (not owner/admin)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/data-catalog': {
+      get: {
+        tags: ['Data Catalog'],
+        summary: 'List data catalog',
+        description: 'Platform-wide data catalog (active entries only). JWT required. Used to reference data_id in purposes.required_data.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DataCatalogListResponse' } } },
+          },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/data-catalog/{dataId}': {
+      get: {
+        tags: ['Data Catalog'],
+        summary: 'Get data catalog entry by data_id',
+        description: 'Single catalog entry by data_id (e.g. AADHAAR_NUMBER).',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'dataId', in: 'path', required: true, schema: { type: 'string' }, description: 'Data ID (e.g. AADHAAR_NUMBER)' }],
+        responses: {
+          200: {
+            description: 'Success',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DataCatalogEntry' } } },
+          },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'Not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },

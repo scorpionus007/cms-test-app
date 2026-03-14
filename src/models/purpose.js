@@ -27,9 +27,25 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: false,
       },
-      purpose_code: {
+      purpose_id: {
         type: DataTypes.STRING(100),
         allowNull: true,
+        comment: 'Stable purpose identifier e.g. KYC_AADHAAR; unique per tenant',
+      },
+      required_data: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Array of data_id from data_catalog',
+      },
+      permissions: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'e.g. { allowed_access: [], allowed_frequency: [] }',
+      },
+      validity_days: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'Consent validity days; must be <= MIN(data_catalog.max_validity_days) for required_data',
       },
       retention_days: {
         type: DataTypes.INTEGER,
@@ -60,6 +76,7 @@ module.exports = (sequelize) => {
       indexes: [
         { fields: ['tenant_id'] },
         { unique: true, fields: ['tenant_id', 'name'] },
+        { unique: true, fields: ['tenant_id', 'purpose_id'], name: 'purposes_tenant_purpose_id_unique' },
       ],
     }
   );

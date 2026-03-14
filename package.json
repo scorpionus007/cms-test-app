@@ -10,7 +10,10 @@
     "db:create": "node src/scripts/createDatabase.js",
     "db:sync": "node src/scripts/syncDb.js",
     "db:clear": "node src/scripts/clearDb.js",
-    "db:fix-clients-name": "node src/scripts/addClientNameColumn.js"
+    "db:seed-catalog": "node src/scripts/seedDataCatalog.js",
+    "db:fix-clients-name": "node src/scripts/addClientNameColumn.js",
+    "consent:expire": "node src/scripts/expireConsents.js",
+    "test:google": "node src/scripts/serve-google-test.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
