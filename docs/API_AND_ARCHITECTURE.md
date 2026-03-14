@@ -169,7 +169,6 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 | `name` | VARCHAR(255) | NO | - | Purpose name |
 | `description` | TEXT | YES | - | Description |
 | `required` | BOOLEAN | NO | false | Required for consent banner |
-| `purpose_id` | VARCHAR(100) | YES | - | Stable purpose id (e.g. KYC_AADHAAR); unique per tenant |
 | `required_data` | JSON | YES | - | Array of data_id from data_catalog |
 | `permissions` | JSON | YES | - | e.g. allowed_access, allowed_frequency |
 | `validity_days` | INT | YES | - | Consent validity days; must be <= min of data_catalog.max_validity_days for required_data |
@@ -178,7 +177,7 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 | `created_at` | DATE | NO | NOW | Created at |
 | `updated_at` | DATE | NO | NOW | Updated at |
 
-**Indexes:** `tenant_id`; unique `(tenant_id, name)`; unique `(tenant_id, purpose_id)`.
+**Indexes:** `tenant_id`; unique `(tenant_id, name)`.
 
 ---
 

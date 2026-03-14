@@ -17,10 +17,12 @@ async function create(req, res, next) {
 
 async function list(req, res, next) {
   try {
+    const includeInactive = req.query.include_inactive === 'true' || req.query.include_inactive === '1';
     const purposes = await purposeService.listPurposes(
       req.user.tenant_id,
       req.user.client_id,
-      getClientIp(req)
+      getClientIp(req),
+      { includeInactive }
     );
     res.status(200).json({ purposes });
   } catch (err) {

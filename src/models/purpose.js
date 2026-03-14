@@ -27,11 +27,6 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: false,
       },
-      purpose_id: {
-        type: DataTypes.STRING(100),
-        allowNull: true,
-        comment: 'Stable purpose identifier e.g. KYC_AADHAAR; unique per tenant',
-      },
       required_data: {
         type: DataTypes.JSON,
         allowNull: true,
@@ -76,7 +71,6 @@ module.exports = (sequelize) => {
       indexes: [
         { fields: ['tenant_id'] },
         { unique: true, fields: ['tenant_id', 'name'] },
-        { unique: true, fields: ['tenant_id', 'purpose_id'], name: 'purposes_tenant_purpose_id_unique' },
       ],
     }
   );

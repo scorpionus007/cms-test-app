@@ -96,7 +96,7 @@ async function getConsentArtifact(tenantId, appId, userId, ipAddress = null) {
   const purposes = purposeIds.length
     ? await Purpose.findAll({
         where: { id: purposeIds },
-        attributes: ['id', 'purpose_id', 'description', 'required_data'],
+        attributes: ['id', 'description', 'required_data'],
       })
     : [];
   const purposeMap = new Map(purposes.map((p) => [p.id, p]));
@@ -112,7 +112,7 @@ async function getConsentArtifact(tenantId, appId, userId, ipAddress = null) {
         dataPrincipal: { id: normalizedUserId },
         dataFiduciary: { id: tenantId },
         purpose: {
-          id: purpose ? purpose.purpose_id || null : null,
+          id: purpose ? purpose.id : null,
           text: purpose ? purpose.description || null : null,
         },
         policy_version_id: r.policy_version_id || null,

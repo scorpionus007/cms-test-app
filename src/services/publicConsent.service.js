@@ -12,7 +12,7 @@ const consentService = require('./consent.service');
 async function listPurposes(tenantId, ipAddress = null) {
   const purposes = await Purpose.findAll({
     where: { tenant_id: tenantId, active: true },
-    attributes: ['id', 'name', 'description', 'required', 'purpose_id', 'required_data', 'validity_days', 'permissions'],
+    attributes: ['id', 'name', 'description', 'required', 'required_data', 'validity_days', 'permissions'],
     order: [['name', 'ASC']],
   });
   await auditService.logAction({
@@ -29,7 +29,6 @@ async function listPurposes(tenantId, ipAddress = null) {
     name: p.name,
     description: p.description,
     required: p.required,
-    purpose_id: p.purpose_id || null,
     required_data: Array.isArray(p.required_data) ? p.required_data : null,
     validity_days: p.validity_days ?? null,
     permissions: p.permissions || null,

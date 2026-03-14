@@ -364,7 +364,6 @@ const spec = {
           name: { type: 'string' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
-          purpose_id: { type: 'string', nullable: true, description: 'Stable purpose id e.g. KYC_AADHAAR' },
           required_data: { type: 'array', items: { type: 'string' }, nullable: true, description: 'Data catalog data_id list' },
           permissions: { type: 'object', nullable: true },
           validity_days: { type: 'integer', nullable: true, description: 'Must be <= min of data_catalog.max_validity_days for required_data' },
@@ -381,7 +380,6 @@ const spec = {
           name: { type: 'string', example: 'Analytics' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean', default: false },
-          purpose_id: { type: 'string', nullable: true, example: 'KYC_AADHAAR' },
           required_data: { type: 'array', items: { type: 'string' }, nullable: true, example: ['AADHAAR_NUMBER', 'AADHAAR_ADDRESS'] },
           validity_days: { type: 'integer', nullable: true },
           permissions: { type: 'object', nullable: true },
@@ -394,7 +392,6 @@ const spec = {
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
           active: { type: 'boolean' },
-          purpose_id: { type: 'string', nullable: true },
           required_data: { type: 'array', items: { type: 'string' }, nullable: true },
           validity_days: { type: 'integer', nullable: true },
           permissions: { type: 'object', nullable: true },
@@ -510,7 +507,7 @@ const spec = {
                     timestamp: { type: 'string', format: 'date-time' },
                     dataPrincipal: { type: 'object', properties: { id: { type: 'string' } } },
                     dataFiduciary: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
-                    purpose: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string', nullable: true } } },
+                    purpose: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, text: { type: 'string', nullable: true } } },
                     policy_version_id: { type: 'string', format: 'uuid', nullable: true },
                     data: { type: 'object', properties: { data_ids: { type: 'array', items: { type: 'string' } } } },
                     audit: { type: 'object', properties: { consentMethod: { type: 'string' }, timestamp: { type: 'string' }, createdBy: { type: 'string' }, ipAddress: { type: 'string', nullable: true } } },
@@ -530,7 +527,6 @@ const spec = {
           name: { type: 'string' },
           description: { type: 'string', nullable: true },
           required: { type: 'boolean' },
-          purpose_id: { type: 'string', nullable: true },
           required_data: { type: 'array', items: { type: 'string' }, nullable: true },
           validity_days: { type: 'integer', nullable: true },
           permissions: { type: 'object', nullable: true },
@@ -1286,8 +1282,11 @@ const spec = {
       get: {
         tags: ['Purposes'],
         summary: 'List purposes',
-        description: 'List active purposes for tenant. Audit: PURPOSE_LIST.',
+        description: 'List purposes for tenant. By default only active; use include_inactive=true to include soft-deleted. Audit: PURPOSE_LIST.',
         security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'include_inactive', in: 'query', required: false, schema: { type: 'string', enum: ['true', 'false'] }, description: 'If true, include inactive (soft-deleted) purposes' },
+        ],
         responses: {
           200: {
             description: 'Success',

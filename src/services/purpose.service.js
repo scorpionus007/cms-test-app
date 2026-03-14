@@ -2,6 +2,11 @@ const { Purpose, DataCatalog } = require('../models');
 const auditService = require('./audit.service');
 const webhookDispatcher = require('./webhookDispatcher.service');
 
+/** Normalize name for comparison (trim + lowercase) to avoid DB collation mismatches. */
+function normalizeName(str) {
+  return (str == null || typeof str !== 'string') ? '' : str.trim().toLowerCase();
+}
+
 /**
  * Validate required_data: each data_id must exist in data_catalog and be active.
  * Returns catalog rows for validity check.
@@ -38,7 +43,7 @@ function getMaxAllowedValidityDays(catalogRows) {
  * Create purpose scoped to tenant. All queries tenant-scoped.
  */
 async function createPurpose(tenantId, actorClientId, body, ipAddress = null) {
-  const { name, description, required, purpose_id: purposeIdStr, required_data, validity_days, permissions } = body;
+  const { name, description, required, required_data, validity_days, permissions } = body;
   if (!name || typeof name !== 'string' || !name.trim()) {
     const err = new Error('name is required');
     err.statusCode = 400;
@@ -58,28 +63,74 @@ async function createPurpose(tenantId, actorClientId, body, ipAddress = null) {
       throw err;
     }
   }
+  const trimmedName = name.trim();
+  const normalizedNew = normalizeName(trimmedName);
+  // Match by normalized name (trim + lowercase) so we don't miss rows due to DB collation
+  const allSameTenant = await Purpose.findAll({
+    where: { tenant_id: tenantId },
+    attributes: ['id', 'name', 'active'],
+  });
+  const existing = allSameTenant.find((p) => normalizeName(p.name) === normalizedNew);
+  if (existing && existing.active) {
+    const err = new Error(`A purpose with the name "${trimmedName}" already exists for this tenant. Use a different name or update the existing purpose.`);
+    err.statusCode = 409;
+    throw err;
+  }
   const payload = {
     tenant_id: tenantId,
-    name: name.trim(),
+    name: trimmedName,
     description: description != null ? String(description).trim() || null : null,
     required: Boolean(required),
     active: true,
   };
-  if (purposeIdStr !== undefined) payload.purpose_id = purposeIdStr ? String(purposeIdStr).trim() || null : null;
   if (Array.isArray(required_data)) payload.required_data = required_data;
   if (typeof validity_days === 'number') payload.validity_days = validity_days;
   if (permissions != null && typeof permissions === 'object') payload.permissions = permissions;
+
   let purpose;
-  try {
-    purpose = await Purpose.create(payload);
-  } catch (err) {
-    if (err.name === 'SequelizeUniqueConstraintError') {
-      const e = new Error('A purpose with this name or purpose_id already exists for the tenant');
-      e.statusCode = 409;
-      throw e;
+  if (existing && !existing.active) {
+    // Reactivate and update the inactive purpose with this name instead of creating a duplicate
+    await existing.update(payload);
+    purpose = await Purpose.findByPk(existing.id, {
+      attributes: ['id', 'tenant_id', 'name', 'description', 'required', 'required_data', 'permissions', 'validity_days', 'retention_days', 'active', 'created_at', 'updated_at'],
+    });
+  } else {
+    try {
+      purpose = await Purpose.create(payload);
+    } catch (err) {
+      if (err.name === 'SequelizeUniqueConstraintError') {
+        // Conflict: find row by normalized name (DB collation may differ from our WHERE)
+        const allForTenant = await Purpose.findAll({
+          where: { tenant_id: tenantId },
+          attributes: ['id', 'name', 'active'],
+        });
+        const conflicting = allForTenant.find((p) => normalizeName(p.name) === normalizedNew);
+        if (conflicting && !conflicting.active) {
+          const row = await Purpose.findByPk(conflicting.id);
+          await row.update(payload);
+          purpose = await Purpose.findByPk(conflicting.id, {
+            attributes: ['id', 'tenant_id', 'name', 'description', 'required', 'required_data', 'permissions', 'validity_days', 'retention_days', 'active', 'created_at', 'updated_at'],
+          });
+        } else if (conflicting && conflicting.active) {
+          const e = new Error(`A purpose with the name "${trimmedName}" already exists for this tenant. Use a different name or update the existing purpose.`);
+          e.statusCode = 409;
+          throw e;
+        } else {
+          // Unique constraint fired but no row matched by name – possible schema issue (e.g. unique on tenant_id only)
+          const existingNames = allForTenant.map((p) => p.name).join(', ') || 'none';
+          const e = new Error(
+            `Cannot create purpose: a conflict occurred. Existing purpose names for this tenant: ${existingNames}. ` +
+            'Ensure the database allows multiple purposes per tenant (unique on tenant_id + name). Run: npm run db:sync'
+          );
+          e.statusCode = 409;
+          throw e;
+        }
+      } else {
+        throw err;
+      }
     }
-    throw err;
   }
+
   await auditService.logAction({
     tenant_id: tenantId,
     actor_client_id: actorClientId,
@@ -100,13 +151,15 @@ async function createPurpose(tenantId, actorClientId, body, ipAddress = null) {
 }
 
 /**
- * List purposes for tenant; return only active = true.
+ * List purposes for tenant. By default only active = true; pass includeInactive: true to include soft-deleted.
  */
-async function listPurposes(tenantId, actorClientId, ipAddress = null) {
+async function listPurposes(tenantId, actorClientId, ipAddress = null, options = {}) {
+  const where = { tenant_id: tenantId };
+  if (!options.includeInactive) where.active = true;
   const purposes = await Purpose.findAll({
-    where: { tenant_id: tenantId, active: true },
+    where,
     attributes: [
-      'id', 'tenant_id', 'name', 'description', 'required', 'purpose_id',
+      'id', 'tenant_id', 'name', 'description', 'required',
       'required_data', 'permissions', 'validity_days', 'active', 'created_at', 'updated_at',
     ],
     order: [['name', 'ASC']],
@@ -135,7 +188,7 @@ async function updatePurpose(tenantId, purposeId, actorClientId, body, ipAddress
     err.statusCode = 404;
     throw err;
   }
-  const { name, description, required, active, purpose_id: purposeIdStr, required_data, validity_days, permissions } = body;
+  const { name, description, required, active, required_data, validity_days, permissions } = body;
   if (required_data !== undefined) {
     const catalogRows = await validateRequiredData(required_data);
     const maxAllowed = getMaxAllowedValidityDays(catalogRows);
@@ -162,7 +215,6 @@ async function updatePurpose(tenantId, purposeId, actorClientId, body, ipAddress
   if (description !== undefined) updates.description = description == null ? null : String(description).trim();
   if (typeof required === 'boolean') updates.required = required;
   if (typeof active === 'boolean') updates.active = active;
-  if (purposeIdStr !== undefined) updates.purpose_id = purposeIdStr ? String(purposeIdStr).trim() || null : null;
   if (Array.isArray(required_data)) updates.required_data = required_data;
   if (typeof validity_days === 'number') updates.validity_days = validity_days;
   if (permissions !== undefined) updates.permissions = permissions != null && typeof permissions === 'object' ? permissions : null;
