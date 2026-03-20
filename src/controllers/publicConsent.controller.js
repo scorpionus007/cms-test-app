@@ -23,8 +23,11 @@ async function getPolicy(req, res, next) {
 async function grantConsent(req, res, next) {
   try {
     const appId = req.appId || req.params.appId;
+    const email = req.body.email ?? req.body.userEmail ?? req.body.user_email;
+    const phoneNumber = req.body.phoneNumber ?? req.body.phone_number ?? req.body.phone;
     const body = {
-      user_id: req.body.userId ?? req.body.user_id,
+      email,
+      phone_number: phoneNumber,
       purpose_id: req.body.purposeId ?? req.body.purpose_id,
       policy_version_id: req.body.policyVersionId ?? req.body.policy_version_id,
     };
@@ -38,8 +41,11 @@ async function grantConsent(req, res, next) {
 async function withdrawConsent(req, res, next) {
   try {
     const appId = req.appId || req.params.appId;
+    const email = req.body.email ?? req.body.userEmail ?? req.body.user_email;
+    const phoneNumber = req.body.phoneNumber ?? req.body.phone_number ?? req.body.phone;
     const body = {
-      user_id: req.body.userId ?? req.body.user_id,
+      email,
+      phone_number: phoneNumber,
       purpose_id: req.body.purposeId ?? req.body.purpose_id,
     };
     await publicConsentService.withdrawConsent(req.tenant.id, appId, body, getClientIp(req));

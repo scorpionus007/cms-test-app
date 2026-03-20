@@ -17,7 +17,7 @@ const spec = {
 5. **Purposes** – \`POST /purposes\`, \`GET /purposes\`, \`PUT /purposes/:id\`, \`DELETE /purposes/:id\` (tenant-level, shared by apps).
 6. **Data catalog** – \`GET /data-catalog\`, \`GET /data-catalog/:dataId\` (platform-wide, read-only).
 7. **Policy versions (per app)** – \`POST /tenant/apps/:appId/policy-versions\`, \`GET /tenant/apps/:appId/policy-versions/active\`, \`GET /tenant/apps/:appId/policy-versions\`.
-8. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent/:userId/:purposeId\`.
+8. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent\`.
 9. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\`.
 10. **DSR** – Public: \`POST /dsr/request\` (body: **app_id**, user_id, type/request_type). Admin: \`GET /tenant/apps/:appId/dsr\`, \`PATCH /tenant/apps/:appId/dsr/:id\`, \`GET /tenant/apps/:appId/dsr/:id/export\`.
 11. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\`. **Audit** – \`GET /audit-logs\` (owner/admin).`,
@@ -446,11 +446,26 @@ const spec = {
       },
       ConsentGrantRequest: {
         type: 'object',
-        required: ['userId', 'purposeId', 'policyVersionId'],
+        description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
+        required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
         properties: {
-          userId: { type: 'string', description: 'Pseudonymous user identifier' },
+          email: { type: 'string', description: 'Raw user email (required)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
           purposeId: { type: 'string', format: 'uuid' },
           policyVersionId: { type: 'string', format: 'uuid' },
+        },
+      },
+      ConsentWithdrawRequest: {
+        type: 'object',
+        description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
+        required: ['email', 'phone_number', 'purposeId'],
+        properties: {
+          email: { type: 'string', description: 'Raw user email (required)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
+          purposeId: { type: 'string', format: 'uuid' },
+          purpose_id: { type: 'string', format: 'uuid' },
         },
       },
       ConsentGrantResponse: {
@@ -556,11 +571,14 @@ const spec = {
       },
       PublicConsentGrantRequest: {
         type: 'object',
-        description: 'Accepts camelCase (userId, purposeId, policyVersionId) or snake_case (user_id, purpose_id, policy_version_id).',
-        required: ['userId', 'purposeId', 'policyVersionId'],
+        description:
+          'Public consent requires BOTH email and phone. Server hashes both and stores only hashes (plus combined user_id hash). ' +
+          'Purpose/policy accept camelCase or snake_case.',
+        required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
         properties: {
-          userId: { type: 'string', description: 'User identifier (camelCase)' },
-          user_id: { type: 'string', description: 'User identifier (snake_case)' },
+          email: { type: 'string', description: 'Raw user email (required)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
           purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
           purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
           policyVersionId: { type: 'string', format: 'uuid', description: 'Policy version UUID (camelCase)' },
@@ -569,11 +587,14 @@ const spec = {
       },
       PublicConsentWithdrawRequest: {
         type: 'object',
-        description: 'Accepts camelCase (userId, purposeId) or snake_case (user_id, purpose_id).',
-        required: ['userId', 'purposeId'],
+        description:
+          'Withdraw requires BOTH email and phone. Server hashes both and derives the same combined user_id hash for lookup. ' +
+          'Purpose accepts camelCase or snake_case.',
+        required: ['email', 'phone_number', 'purposeId'],
         properties: {
-          userId: { type: 'string', description: 'User identifier (camelCase)' },
-          user_id: { type: 'string', description: 'User identifier (snake_case)' },
+          email: { type: 'string', description: 'Raw user email (required)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
           purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
           purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
         },
@@ -860,7 +881,10 @@ const spec = {
       post: {
         tags: ['Webhooks'],
         summary: 'Create webhook',
-        description: 'Register a webhook endpoint. Payloads are signed with HMAC SHA256 (x-webhook-signature). Secret is returned only on create. Only owner or admin.',
+        description:
+          'Register a webhook endpoint. Payloads are signed with HMAC SHA256. ' +
+          'Headers: x-webhook-timestamp (unix seconds), x-webhook-event, x-webhook-signature (t=<ts>,v1=<hex>). ' +
+          'HMAC input: `${t}.${rawBody}`. Secret is returned only on create. Only owner or admin.',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -1061,7 +1085,7 @@ const spec = {
       post: {
         tags: ['Consent', 'Apps'],
         summary: 'Grant consent',
-        description: 'Record consent for a user and purpose (per app). Creates consent identity if needed, appends GRANTED event. Requires consent:write.',
+        description: 'Record consent for a user and purpose (per app). Identity is derived server-side from email + phone_number, then hashed. Requires consent:write.',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         requestBody: {
@@ -1081,6 +1105,33 @@ const spec = {
           401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           404: { description: 'App not found, or purpose or policy version not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+      delete: {
+        tags: ['Consent', 'Apps'],
+        summary: 'Withdraw consent (per purpose)',
+        description: 'Append WITHDRAWN event for (derived identity, purpose) in this app. Identity is derived from email + phone_number. Idempotent. Triggers webhook. Requires consent:write.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ConsentWithdrawRequest' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Consent withdrawn (or already withdrawn)',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentWithdrawResponse' } } },
+          },
+          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'App not found, or consent not found for this identity and purpose', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -1150,29 +1201,6 @@ const spec = {
         },
       },
     },
-    '/apps/{appId}/consent/{userId}/{purposeId}': {
-      delete: {
-        tags: ['Consent', 'Apps'],
-        summary: 'Withdraw consent (per purpose)',
-        description: 'Append WITHDRAWN event for (user, purpose) in this app. Idempotent. Triggers webhook. Requires consent:write.',
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
-          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
-          { name: 'purposeId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Purpose UUID to withdraw' },
-        ],
-        responses: {
-          200: {
-            description: 'Consent withdrawn (or already withdrawn)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/ConsentWithdrawResponse' } } },
-          },
-          400: { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          401: { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          403: { description: 'Forbidden', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          404: { description: 'App not found, or consent not found for this user and purpose', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-        },
-      },
-    },
     '/clients': {
       get: {
         tags: ['Clients'],
@@ -1201,6 +1229,7 @@ const spec = {
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'action', in: 'query', schema: { type: 'string' }, description: 'Filter by action (e.g. TENANT_CREATED, CLIENT_LOGIN, CLIENT_INVITED)' },
+          { name: 'email', in: 'query', schema: { type: 'string', format: 'email' }, description: 'For consent logs: raw email is hashed server-side and matched against metadata.email_hash' },
           { name: 'from_date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'From date (inclusive)' },
           { name: 'to_date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'To date (inclusive)' },
           { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
@@ -1441,7 +1470,7 @@ const spec = {
       post: {
         tags: ['Public API'],
         summary: 'Submit consent (public)',
-        description: 'Submit user consent for the app. API key required. Audit: PUBLIC_CONSENT_GRANTED.',
+        description: 'Submit user consent for the app. Requires email + phone_number; server hashes both and derives user_id. API key required. Audit: PUBLIC_CONSENT_GRANTED.',
         security: [{ apiKey: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
@@ -1468,7 +1497,7 @@ const spec = {
       delete: {
         tags: ['Public API'],
         summary: 'Withdraw consent (public)',
-        description: 'Withdraw consent for (user_id, purpose_id) for the app. API key required. Audit: PUBLIC_CONSENT_WITHDRAWN.',
+        description: 'Withdraw consent for (derived identity, purpose_id) for the app. Requires email + phone_number; server hashes both and derives user_id. API key required. Audit: PUBLIC_CONSENT_WITHDRAWN.',
         security: [{ apiKey: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },

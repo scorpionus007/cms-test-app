@@ -2,15 +2,28 @@ const crypto = require('crypto');
 
 /**
  * Sign payload for webhook delivery (HMAC SHA256).
- * Clients verify using x-webhook-signature header.
+ *
+ * Signature scheme (v1):
+ * - CMS sends:
+ *   - x-webhook-timestamp: <unix seconds>
+ *   - x-webhook-signature: t=<unix seconds>,v1=<hex hmac>
+ * - HMAC input: `${timestamp}.${rawBody}`
+ *
+ * Receivers should:
+ * - Read raw request body bytes/string (exact JSON payload as received)
+ * - Compute HMAC-SHA256(secret, `${t}.${rawBody}`) => hex
+ * - Compare with v1 using constant-time comparison
  * @param {string} secret
- * @param {string|object} payload - JSON string or object (will be stringified)
- * @returns {string} hex signature
+ * @param {string} payloadStr - exact JSON string that will be sent
+ * @param {number|string} timestampSeconds - unix timestamp (seconds)
+ * @returns {{ signatureHeader: string, signature: string, timestamp: string }}
  */
-function signPayload(secret, payload) {
-  if (!secret || typeof secret !== 'string') return '';
-  const str = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  return crypto.createHmac('sha256', secret).update(str).digest('hex');
+function signPayload(secret, payloadStr, timestampSeconds) {
+  if (!secret || typeof secret !== 'string') return { signatureHeader: '', signature: '', timestamp: '' };
+  const ts = String(timestampSeconds);
+  const msg = `${ts}.${payloadStr}`;
+  const sig = crypto.createHmac('sha256', secret).update(msg, 'utf8').digest('hex');
+  return { signatureHeader: `t=${ts},v1=${sig}`, signature: sig, timestamp: ts };
 }
 
 module.exports = { signPayload };

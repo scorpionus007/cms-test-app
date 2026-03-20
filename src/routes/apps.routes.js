@@ -9,7 +9,7 @@ const { authenticate, requireTenant, authorize } = require('../middleware/auth.m
 const { requireApp } = require('../middleware/app.middleware');
 const {
   grantConsentValidation,
-  withdrawConsentParamValidation,
+  withdrawConsentBodyValidation,
   getConsentParamValidation,
   handleValidationErrors,
 } = require('../validators/consent.validator');
@@ -53,11 +53,11 @@ router.post(
   consentController.grant
 );
 
-// DELETE /apps/:appId/consent/:userId/:purposeId - withdraw
+// DELETE /apps/:appId/consent - withdraw (identity derived from email+phone)
 router.delete(
-  '/consent/:userId/:purposeId',
+  '/consent',
   authorize('consent:write'),
-  withdrawConsentParamValidation,
+  withdrawConsentBodyValidation,
   handleValidationErrors,
   consentController.withdraw
 );

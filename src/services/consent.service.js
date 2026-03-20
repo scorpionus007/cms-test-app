@@ -52,7 +52,7 @@ async function validatePolicyVersion(tenantId, appId, policyVersionId) {
  */
 async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = null, options = {}) {
   const auditAction = options.auditActionGranted || 'CONSENT_GRANTED';
-  const { userId, purposeId, policyVersionId } = body;
+  const { userId, purposeId, policyVersionId, emailHash, phoneHash } = body;
 
   if (!appId) {
     const err = new Error('app_id is required');
@@ -97,6 +97,8 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
       tenant_id: tenantId,
       app_id: appId,
       user_id: normalizedUserId,
+      email_hash: emailHash || null,
+      phone_hash: phoneHash || null,
       purpose_id: purposeId,
       policy_version_id: policyVersionId,
       granted_at: now,
@@ -105,6 +107,8 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     });
   } else {
     await consent.update({
+      email_hash: emailHash || consent.email_hash || null,
+      phone_hash: phoneHash || consent.phone_hash || null,
       policy_version_id: policyVersionId,
       granted_at: now,
       expires_at: expiresAt,
@@ -145,7 +149,7 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     action: auditAction,
     resource_type: 'consent',
     resource_id: consent.id,
-    metadata: { user_id: normalizedUserId, purpose_id: purposeId, policy_version_id: policyVersionId },
+    metadata: { email_hash: emailHash || null, purpose_id: purposeId, policy_version_id: policyVersionId },
     ip_address: ipAddress,
   });
 
@@ -169,6 +173,7 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
  */
 async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId, ipAddress = null, options = {}) {
   const auditAction = options.auditActionWithdrawn || 'CONSENT_WITHDRAWN';
+  const emailHash = options.emailHash || null;
   if (!appId) {
     const err = new Error('app_id is required');
     err.statusCode = 400;
@@ -257,7 +262,7 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
     action: auditAction,
     resource_type: 'consent',
     resource_id: consent.id,
-    metadata: { user_id: normalizedUserId, purpose_id: purposeId },
+    metadata: { email_hash: emailHash, purpose_id: purposeId },
     ip_address: ipAddress,
   });
 

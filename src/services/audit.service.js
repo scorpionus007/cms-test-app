@@ -1,7 +1,8 @@
 /**
  * Audit logging for compliance tracking. Records important actions per tenant.
  */
-const { AuditLog, Op } = require('../models');
+const { AuditLog, Op, sequelize } = require('../models');
+const { pseudonymizeEmail } = require('../utils/pseudonymizeUserIdentifier');
 
 /**
  * Log an action to the audit log.
@@ -50,7 +51,7 @@ async function logAction({
  * @param {number} [options.limit=20]
  */
 async function listLogs(tenantId, options = {}) {
-  const { action, from_date, to_date, page = 1, limit = 20 } = options;
+  const { action, from_date, to_date, email, page = 1, limit = 20 } = options;
   const where = { tenant_id: tenantId };
 
   if (action && typeof action === 'string' && action.trim()) {
@@ -71,6 +72,17 @@ async function listLogs(tenantId, options = {}) {
       }
     }
     if (Object.keys(where.created_at).length === 0) delete where.created_at;
+  }
+
+  if (email && typeof email === 'string' && email.trim()) {
+    const emailHash = pseudonymizeEmail(tenantId, email);
+    where[Op.and] = where[Op.and] || [];
+    where[Op.and].push(
+      sequelize.where(
+        sequelize.fn('JSON_UNQUOTE', sequelize.fn('JSON_EXTRACT', sequelize.col('metadata'), '$.email_hash')),
+        emailHash
+      )
+    );
   }
 
   const safeLimit = Math.min(Math.max(1, parseInt(limit, 10) || 20), 100);

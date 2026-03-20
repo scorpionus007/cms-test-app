@@ -10,6 +10,9 @@ node_modules/
 *.pem
 *.key
 
+# Demo apps env (never commit)
+demo-apps/**/.env
+
 # Logs and debug
 logs/
 *.log

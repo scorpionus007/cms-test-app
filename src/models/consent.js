@@ -25,6 +25,16 @@ module.exports = (sequelize) => {
         allowNull: false,
         comment: 'Pseudonymized user identifier (HMAC)',
       },
+      email_hash: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: 'Pseudonymized email hash (HMAC SHA-256 hex)',
+      },
+      phone_hash: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: 'Pseudonymized phone hash (HMAC SHA-256 hex)',
+      },
       purpose_id: {
         type: DataTypes.UUID,
         allowNull: false,

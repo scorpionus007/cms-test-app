@@ -4,6 +4,9 @@
  */
 const { Webhook } = require('../models');
 const webhookQueue = require('../queues/webhook.queue');
+const { WebhookDelivery } = require('../models');
+const axios = require('axios');
+const { signPayload } = require('../utils/webhookSigner');
 
 /**
  * Build final payload shape: { event, timestamp, data }.
@@ -45,26 +48,60 @@ function dispatch({ event, tenant_id, payload }) {
 
     const body = buildPayload(event, tenant_id, payload);
 
-    if (!webhookQueue) return; // Redis disabled or unavailable
+      // If Redis/BullMQ is enabled, enqueue jobs and return immediately.
+      if (webhookQueue) {
+        for (const wh of subscribed) {
+          const url = wh.url && typeof wh.url === 'string' ? wh.url.trim() : '';
+          if (!url) continue;
 
-    for (const wh of subscribed) {
-      const url = wh.url && typeof wh.url === 'string' ? wh.url.trim() : '';
-      if (!url) continue;
-
-      await webhookQueue.add(
-        'deliverWebhook',
-        {
-          webhook_id: wh.id,
-          url,
-          secret: wh.secret || '',
-          body,
-        },
-        {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 60000 },
+          await webhookQueue.add(
+            'deliverWebhook',
+            {
+              webhook_id: wh.id,
+              url,
+              secret: wh.secret || '',
+              body,
+            },
+            {
+              attempts: 5,
+              backoff: { type: 'exponential', delay: 60000 },
+            }
+          );
         }
-      );
-    }
+        return;
+      }
+
+      // Fallback (no Redis): deliver synchronously via HTTP.
+      // This lets you test webhooks without installing Redis or running the worker.
+      const timestampSeconds = Math.floor(Date.now() / 1000);
+      const payloadStr = JSON.stringify(body);
+      for (const wh of subscribed) {
+        const url = wh.url && typeof wh.url === 'string' ? wh.url.trim() : '';
+        if (!url) continue;
+
+        const secret = wh.secret || '';
+        const { signatureHeader } = signPayload(secret, payloadStr, timestampSeconds);
+
+        const response = await axios.post(url, body, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-webhook-signature': signatureHeader,
+            'x-webhook-timestamp': String(timestampSeconds),
+            'x-webhook-event': event,
+          },
+          timeout: 15000,
+          validateStatus: () => true,
+        });
+
+        const success = response.status >= 200 && response.status < 300;
+        await WebhookDelivery.create({
+          webhook_id: wh.id,
+          payload: body,
+          status: success ? 'success' : 'failed',
+          response_code: response.status,
+          retries: 0,
+        });
+      }
     } catch (err) {
       if (process.env.NODE_ENV !== 'test') {
         try {

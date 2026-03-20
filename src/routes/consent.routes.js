@@ -3,7 +3,7 @@ const consentController = require('../controllers/consent.controller');
 const { authenticate, requireTenant, authorize } = require('../middleware/auth.middleware');
 const {
   grantConsentValidation,
-  withdrawConsentParamValidation,
+  withdrawConsentBodyValidation,
   handleValidationErrors,
 } = require('../validators/consent.validator');
 
@@ -20,11 +20,11 @@ router.post(
 );
 
 router.delete(
-  '/:userId/:purposeId',
+  '/',
   authenticate,
   requireTenant,
   authorize('consent:write'),
-  withdrawConsentParamValidation,
+  withdrawConsentBodyValidation,
   handleValidationErrors,
   consentController.withdraw
 );

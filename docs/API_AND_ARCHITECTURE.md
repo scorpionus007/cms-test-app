@@ -6,34 +6,38 @@ Complete reference for the DPDP-oriented multi-tenant consent and audit backend:
 
 ## 1. Project Overview
 
-| Item | Description |
-|------|-------------|
-| **Stack** | Node.js, Express, MySQL, Sequelize |
-| **Purpose** | Multi-tenant consent management and audit backend (DPDP compliance) |
-| **Auth** | Google OAuth (ID token) → JWT (onboarding or full tenant JWT) |
-| **Isolation** | Tenant-scoped; `tenant_id` from JWT used for all data access |
+
+| Item          | Description                                                         |
+| ------------- | ------------------------------------------------------------------- |
+| **Stack**     | Node.js, Express, MySQL, Sequelize                                  |
+| **Purpose**   | Multi-tenant consent management and audit backend (DPDP compliance) |
+| **Auth**      | Google OAuth (ID token) → JWT (onboarding or full tenant JWT)       |
+| **Isolation** | Tenant-scoped; `tenant_id` from JWT used for all data access        |
+
 
 ### 1.1 Entry Points
 
-| URL | Description |
-|-----|-------------|
-| `/api-docs` | Swagger UI |
-| `/api-docs.json` | OpenAPI spec (JSON) |
-| `/auth/*` | Authentication |
-| `/tenant/*` | Tenant onboarding, tenant info, **apps** (CRUD), API keys |
-| `/tenant/apps/:appId/policy-versions` | Policy versions **per app** |
-| `/tenant/apps/:appId/dsr` | DSR list, update, export **per app** |
-| `/apps/:appId/consent` | Consent (grant, get state, withdraw) **per app** |
-| `/clients` | Client (user) management (tenant-level, shared across apps) |
-| `/audit-logs` | Audit log listing |
-| `/purposes` | Purposes (tenant-level, shared across apps; supports purpose_code, version_label, required_data) |
-| `/data-catalog` | Platform-wide data catalog (read-only; data_id list for purposes) |
-| `/apps/:appId/consent/:userId/artifact` | Consent artifact (purpose id, data_ids, audit, signature, status) |
-| `/apps/:appId/consent/:userId/export` | Legacy consent export |
-| `/dsr/request` | Public DSR submit (body must include `app_id`) |
-| `/public/purposes` | Public: list purposes (tenant) |
-| `/public/apps/:appId/policy` | Public: active policy for app |
-| `/public/apps/:appId/consent` | Public: grant/withdraw consent for app |
+
+| URL                                     | Description                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `/api-docs`                             | Swagger UI                                                                                       |
+| `/api-docs.json`                        | OpenAPI spec (JSON)                                                                              |
+| `/auth/`*                               | Authentication                                                                                   |
+| `/tenant/*`                             | Tenant onboarding, tenant info, **apps** (CRUD), API keys                                        |
+| `/tenant/apps/:appId/policy-versions`   | Policy versions **per app**                                                                      |
+| `/tenant/apps/:appId/dsr`               | DSR list, update, export **per app**                                                             |
+| `/apps/:appId/consent`                  | Consent (grant, get state, withdraw) **per app**                                                 |
+| `/clients`                              | Client (user) management (tenant-level, shared across apps)                                      |
+| `/audit-logs`                           | Audit log listing                                                                                |
+| `/purposes`                             | Purposes (tenant-level, shared across apps; supports purpose_code, version_label, required_data) |
+| `/data-catalog`                         | Platform-wide data catalog (read-only; data_id list for purposes)                                |
+| `/apps/:appId/consent/:userId/artifact` | Consent artifact (purpose id, data_ids, audit, signature, status)                                |
+| `/apps/:appId/consent/:userId/export`   | Legacy consent export                                                                            |
+| `/dsr/request`                          | Public DSR submit (body must include `app_id`)                                                   |
+| `/public/purposes`                      | Public: list purposes (tenant)                                                                   |
+| `/public/apps/:appId/policy`            | Public: active policy for app                                                                    |
+| `/public/apps/:appId/consent`           | Public: grant/withdraw consent for app                                                           |
+
 
 ### 1.2 Security Middleware (Global)
 
@@ -48,10 +52,12 @@ Complete reference for the DPDP-oriented multi-tenant consent and audit backend:
 
 ### 2.1 JWT Types
 
-| Type | When | Payload |
-|------|------|---------|
-| **Onboarding JWT** | After Google login when no client exists | `email`, `name`, `onboarding: true` |
-| **Full JWT** | After Google login when client exists, or after onboarding | `tenant_id`, `client_id`, `email`, `name`, `role`, `scopes` |
+
+| Type               | When                                                       | Payload                                                     |
+| ------------------ | ---------------------------------------------------------- | ----------------------------------------------------------- |
+| **Onboarding JWT** | After Google login when no client exists                   | `email`, `name`, `onboarding: true`                         |
+| **Full JWT**       | After Google login when client exists, or after onboarding | `tenant_id`, `client_id`, `email`, `name`, `role`, `scopes` |
+
 
 - **Header**: `Authorization: Bearer <token>`
 - **Algorithm**: HS256
@@ -59,12 +65,14 @@ Complete reference for the DPDP-oriented multi-tenant consent and audit backend:
 
 ### 2.2 Middleware
 
-| Middleware | Use | Effect |
-|------------|-----|--------|
-| `authenticate` | All protected routes | Verifies JWT; sets `req.user` (or 401) |
-| `requireTenant` | After `authenticate` | Rejects onboarding JWTs (403 "Tenant onboarding required") |
-| `requireRole('owner', 'admin')` | Role-based | Rejects if `req.user.role` not in list (403) |
-| `authorize('consent:write')` | Scope-based | Rejects if no required scope in `req.user.scopes` (403) |
+
+| Middleware                      | Use                  | Effect                                                     |
+| ------------------------------- | -------------------- | ---------------------------------------------------------- |
+| `authenticate`                  | All protected routes | Verifies JWT; sets `req.user` (or 401)                     |
+| `requireTenant`                 | After `authenticate` | Rejects onboarding JWTs (403 "Tenant onboarding required") |
+| `requireRole('owner', 'admin')` | Role-based           | Rejects if `req.user.role` not in list (403)               |
+| `authorize('consent:write')`    | Scope-based          | Rejects if no required scope in `req.user.scopes` (403)    |
+
 
 ### 2.3 Default Scopes (Full JWT)
 
@@ -84,18 +92,20 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 ### 3.1 `tenants`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `name` | VARCHAR(255) | NO | - | Organization name |
-| `domain` | VARCHAR(255) | YES | - | Domain |
-| `industry` | VARCHAR(100) | YES | - | Industry |
-| `country` | VARCHAR(100) | NO | - | Country |
-| `dpdp_applicable` | BOOLEAN | NO | true | DPDP applicability |
-| `status` | ENUM('active','suspended','inactive') | YES | 'active' | Tenant status |
-| `trust_level` | INT | YES | 1 | Trust level |
-| `created_by` | UUID | YES | - | Client (owner) ID who created tenant |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column            | Type                                  | Nullable | Default  | Description                          |
+| ----------------- | ------------------------------------- | -------- | -------- | ------------------------------------ |
+| `id`              | UUID                                  | NO       | UUIDV4   | Primary key                          |
+| `name`            | VARCHAR(255)                          | NO       | -        | Organization name                    |
+| `domain`          | VARCHAR(255)                          | YES      | -        | Domain                               |
+| `industry`        | VARCHAR(100)                          | YES      | -        | Industry                             |
+| `country`         | VARCHAR(100)                          | NO       | -        | Country                              |
+| `dpdp_applicable` | BOOLEAN                               | NO       | true     | DPDP applicability                   |
+| `status`          | ENUM('active','suspended','inactive') | YES      | 'active' | Tenant status                        |
+| `trust_level`     | INT                                   | YES      | 1        | Trust level                          |
+| `created_by`      | UUID                                  | YES      | -        | Client (owner) ID who created tenant |
+| `created_at`      | DATE                                  | NO       | NOW      | Created at                           |
+
 
 **Indexes:** `domain`.
 
@@ -105,15 +115,17 @@ All IDs are UUIDs unless noted. Tables are listed in dependency order.
 
 Each tenant can have multiple apps. **Clients** are shared across apps; **purposes** are tenant-level (shared); **policy**, **consent**, and **DSR** are per app.
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `name` | VARCHAR(255) | NO | - | Display name |
-| `slug` | VARCHAR(100) | NO | - | URL-friendly id, unique per tenant |
-| `status` | ENUM('active','inactive') | YES | 'active' | Status |
-| `created_at` | DATE | NO | NOW | Created at |
-| `updated_at` | DATE | NO | NOW | Updated at |
+
+| Column       | Type                      | Nullable | Default  | Description                        |
+| ------------ | ------------------------- | -------- | -------- | ---------------------------------- |
+| `id`         | UUID                      | NO       | UUIDV4   | Primary key                        |
+| `tenant_id`  | UUID                      | NO       | -        | FK → tenants.id                    |
+| `name`       | VARCHAR(255)              | NO       | -        | Display name                       |
+| `slug`       | VARCHAR(100)              | NO       | -        | URL-friendly id, unique per tenant |
+| `status`     | ENUM('active','inactive') | YES      | 'active' | Status                             |
+| `created_at` | DATE                      | NO       | NOW      | Created at                         |
+| `updated_at` | DATE                      | NO       | NOW      | Updated at                         |
+
 
 **Indexes:** `tenant_id`; unique `(tenant_id, slug)`.
 
@@ -121,18 +133,20 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 ### 3.3 `clients`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `name` | VARCHAR(150) | YES | - | Display name |
-| `email` | VARCHAR(255) | NO | - | Email (unique per tenant) |
-| `provider` | ENUM('google','email') | NO | 'google' | Auth provider |
-| `role` | ENUM('owner','admin','compliance_manager','auditor','viewer') | NO | 'admin' | Role |
-| `status` | ENUM('active','inactive','suspended') | NO | 'active' | Status |
-| `last_login_at` | DATE | YES | - | Last login time |
-| `created_at` | DATE | NO | NOW | Created at |
-| `deleted_at` | DATE | YES | - | Soft delete |
+
+| Column          | Type                                                          | Nullable | Default  | Description               |
+| --------------- | ------------------------------------------------------------- | -------- | -------- | ------------------------- |
+| `id`            | UUID                                                          | NO       | UUIDV4   | Primary key               |
+| `tenant_id`     | UUID                                                          | NO       | -        | FK → tenants.id           |
+| `name`          | VARCHAR(150)                                                  | YES      | -        | Display name              |
+| `email`         | VARCHAR(255)                                                  | NO       | -        | Email (unique per tenant) |
+| `provider`      | ENUM('google','email')consen                                  | NO       | 'google' | Auth provider             |
+| `role`          | ENUM('owner','admin','compliance_manager','auditor','viewer') | NO       | 'admin'  | Role                      |
+| `status`        | ENUM('active','inactive','suspended')                         | NO       | 'active' | Status                    |
+| `last_login_at` | DATE                                                          | YES      | -        | Last login time           |
+| `created_at`    | DATE                                                          | NO       | NOW      | Created at                |
+| `deleted_at`    | DATE                                                          | YES      | -        | Soft delete               |
+
 
 **Indexes:** Unique `(tenant_id, email)`; `tenant_id`; `role`.
 
@@ -144,17 +158,19 @@ Each tenant can have multiple apps. **Clients** are shared across apps; **purpos
 
 Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes via `required_data` (array of `data_id`).
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `data_id` | VARCHAR(100) | NO | - | Stable ID (e.g. AADHAAR_NUMBER); unique |
-| `category` | VARCHAR(100) | YES | - | e.g. identity, address |
-| `description` | TEXT | YES | - | Description |
-| `sensitivity` | ENUM('LOW','MEDIUM','HIGH') | YES | - | Sensitivity |
-| `max_validity_days` | INT | YES | - | Max consent validity days for this data type (DPDP); purpose.validity_days cannot exceed min of required_data |
-| `status` | ENUM('active','inactive') | NO | 'active' | Status |
-| `created_at` | DATE | NO | NOW | Created at |
-| `updated_at` | DATE | NO | NOW | Updated at |
+
+| Column              | Type                        | Nullable | Default  | Description                                                                                                   |
+| ------------------- | --------------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `id`                | UUID                        | NO       | UUIDV4   | Primary key                                                                                                   |
+| `data_id`           | VARCHAR(100)                | NO       | -        | Stable ID (e.g. AADHAAR_NUMBER); unique                                                                       |
+| `category`          | VARCHAR(100)                | YES      | -        | e.g. identity, address                                                                                        |
+| `description`       | TEXT                        | YES      | -        | Description                                                                                                   |
+| `sensitivity`       | ENUM('LOW','MEDIUM','HIGH') | YES      | -        | Sensitivity                                                                                                   |
+| `max_validity_days` | INT                         | YES      | -        | Max consent validity days for this data type (DPDP); purpose.validity_days cannot exceed min of required_data |
+| `status`            | ENUM('active','inactive')   | NO       | 'active' | Status                                                                                                        |
+| `created_at`        | DATE                        | NO       | NOW      | Created at                                                                                                    |
+| `updated_at`        | DATE                        | NO       | NOW      | Updated at                                                                                                    |
+
 
 **Indexes:** Unique `data_id`; `status`. **Seed:** Run `npm run db:seed-catalog` after sync.
 
@@ -162,20 +178,22 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.5 `purposes`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `name` | VARCHAR(255) | NO | - | Purpose name |
-| `description` | TEXT | YES | - | Description |
-| `required` | BOOLEAN | NO | false | Required for consent banner |
-| `required_data` | JSON | YES | - | Array of data_id from data_catalog |
-| `permissions` | JSON | YES | - | e.g. allowed_access, allowed_frequency |
-| `validity_days` | INT | YES | - | Consent validity days; must be <= min of data_catalog.max_validity_days for required_data |
-| `retention_days` | INT | YES | - | Retention in days |
-| `active` | BOOLEAN | NO | true | Active flag |
-| `created_at` | DATE | NO | NOW | Created at |
-| `updated_at` | DATE | NO | NOW | Updated at |
+
+| Column           | Type         | Nullable | Default | Description                                                                               |
+| ---------------- | ------------ | -------- | ------- | ----------------------------------------------------------------------------------------- |
+| `id`             | UUID         | NO       | UUIDV4  | Primary key                                                                               |
+| `tenant_id`      | UUID         | NO       | -       | FK → tenants.id                                                                           |
+| `name`           | VARCHAR(255) | NO       | -       | Purpose name                                                                              |
+| `description`    | TEXT         | YES      | -       | Description                                                                               |
+| `required`       | BOOLEAN      | NO       | false   | Required for consent banner                                                               |
+| `required_data`  | JSON         | YES      | -       | Array of data_id from data_catalog                                                        |
+| `permissions`    | JSON         | YES      | -       | e.g. allowed_access, allowed_frequency                                                    |
+| `validity_days`  | INT          | YES      | -       | Consent validity days; must be <= min of data_catalog.max_validity_days for required_data |
+| `retention_days` | INT          | YES      | -       | Retention in days                                                                         |
+| `active`         | BOOLEAN      | NO       | true    | Active flag                                                                               |
+| `created_at`     | DATE         | NO       | NOW     | Created at                                                                                |
+| `updated_at`     | DATE         | NO       | NOW     | Updated at                                                                                |
+
 
 **Indexes:** `tenant_id`; unique `(tenant_id, name)`.
 
@@ -183,14 +201,16 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.6 `policy_versions`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `version_label` | VARCHAR(100) | NO | - | Version label |
-| `document_hash` | VARCHAR(64) | NO | - | SHA-256 hash of policy document |
-| `effective_from` | DATE | NO | - | Effective from |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column           | Type         | Nullable | Default | Description                     |
+| ---------------- | ------------ | -------- | ------- | ------------------------------- |
+| `id`             | UUID         | NO       | UUIDV4  | Primary key                     |
+| `tenant_id`      | UUID         | NO       | -       | FK → tenants.id                 |
+| `version_label`  | VARCHAR(100) | NO       | -       | Version label                   |
+| `document_hash`  | VARCHAR(64)  | NO       | -       | SHA-256 hash of policy document |
+| `effective_from` | DATE         | NO       | -       | Effective from                  |
+| `created_at`     | DATE         | NO       | NOW     | Created at                      |
+
 
 **Indexes:** `tenant_id`; Unique `(tenant_id, version_label)`.
 
@@ -198,18 +218,20 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.7 `consents`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `app_id` | UUID | YES | - | FK → apps.id (per-app consent) |
-| `user_id` | VARCHAR(255) | NO | - | Pseudonymous user identifier |
-| `purpose_id` | UUID | NO | - | FK → purposes.id |
-| `policy_version_id` | UUID | YES | - | Policy version at grant |
-| `granted_at` | DATE | YES | - | When granted |
-| `expires_at` | DATE | YES | - | When expires (from purpose.validity_days) |
-| `status` | ENUM('ACTIVE','WITHDRAWN','EXPIRED') | YES | ACTIVE | Current status |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column              | Type                                 | Nullable | Default | Description                               |
+| ------------------- | ------------------------------------ | -------- | ------- | ----------------------------------------- |
+| `id`                | UUID                                 | NO       | UUIDV4  | Primary key                               |
+| `tenant_id`         | UUID                                 | NO       | -       | FK → tenants.id                           |
+| `app_id`            | UUID                                 | YES      | -       | FK → apps.id (per-app consent)            |
+| `user_id`           | VARCHAR(255)                         | NO       | -       | Pseudonymous user identifier              |
+| `purpose_id`        | UUID                                 | NO       | -       | FK → purposes.id                          |
+| `policy_version_id` | UUID                                 | YES      | -       | Policy version at grant                   |
+| `granted_at`        | DATE                                 | YES      | -       | When granted                              |
+| `expires_at`        | DATE                                 | YES      | -       | When expires (from purpose.validity_days) |
+| `status`            | ENUM('ACTIVE','WITHDRAWN','EXPIRED') | YES      | ACTIVE  | Current status                            |
+| `created_at`        | DATE                                 | NO       | NOW     | Created at                                |
+
 
 **Indexes:** `tenant_id`; `app_id`; unique `(tenant_id, app_id, user_id, purpose_id)`; `idx_consent_lookup (tenant_id, app_id, user_id)`.
 
@@ -219,16 +241,18 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.8 `consent_events`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `consent_id` | UUID | NO | - | FK → consents.id |
-| `event_type` | ENUM('GRANTED','WITHDRAWN') | NO | - | Event type |
-| `policy_version_id` | UUID | YES | - | FK → policy_versions.id (null for WITHDRAWN) |
-| `actor_type` | VARCHAR(50) | YES | - | e.g. 'client' |
-| `previous_hash` | VARCHAR(64) | YES | - | Hash of previous event (null for first) |
-| `event_hash` | VARCHAR(64) | YES | - | SHA256 chain hash |
-| `created_at` | DATE | NO | CURRENT_TIMESTAMP | DB-generated for chronological order |
+
+| Column              | Type                        | Nullable | Default           | Description                                  |
+| ------------------- | --------------------------- | -------- | ----------------- | -------------------------------------------- |
+| `id`                | UUID                        | NO       | UUIDV4            | Primary key                                  |
+| `consent_id`        | UUID                        | NO       | -                 | FK → consents.id                             |
+| `event_type`        | ENUM('GRANTED','WITHDRAWN') | NO       | -                 | Event type                                   |
+| `policy_version_id` | UUID                        | YES      | -                 | FK → policy_versions.id (null for WITHDRAWN) |
+| `actor_type`        | VARCHAR(50)                 | YES      | -                 | e.g. 'client'                                |
+| `previous_hash`     | VARCHAR(64)                 | YES      | -                 | Hash of previous event (null for first)      |
+| `event_hash`        | VARCHAR(64)                 | YES      | -                 | SHA256 chain hash                            |
+| `created_at`        | DATE                        | NO       | CURRENT_TIMESTAMP | DB-generated for chronological order         |
+
 
 **Indexes:** `consent_id`; `idx_event_lookup (consent_id, created_at)`; `idx_event_type (event_type)`.
 
@@ -238,14 +262,16 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.9 `consent_state_cache`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `tenant_id` | UUID | NO | - | PK, FK → tenants.id |
-| `user_id` | VARCHAR(255) | NO | - | PK, pseudonymous user id |
-| `purpose_id` | UUID | NO | - | PK, FK → purposes.id |
-| `current_status` | ENUM('granted','withdrawn') | NO | - | Derived status |
-| `policy_version_id` | UUID | YES | - | FK → policy_versions.id |
-| `updated_at` | DATE | NO | NOW | Last update |
+
+| Column              | Type                        | Nullable | Default | Description              |
+| ------------------- | --------------------------- | -------- | ------- | ------------------------ |
+| `tenant_id`         | UUID                        | NO       | -       | PK, FK → tenants.id      |
+| `user_id`           | VARCHAR(255)                | NO       | -       | PK, pseudonymous user id |
+| `purpose_id`        | UUID                        | NO       | -       | PK, FK → purposes.id     |
+| `current_status`    | ENUM('granted','withdrawn') | NO       | -       | Derived status           |
+| `policy_version_id` | UUID                        | YES      | -       | FK → policy_versions.id  |
+| `updated_at`        | DATE                        | NO       | NOW     | Last update              |
+
 
 **Indexes:** `(tenant_id, user_id)`.
 
@@ -255,17 +281,19 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.10 `audit_logs`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `actor_client_id` | UUID | YES | - | Client who performed action |
-| `action` | VARCHAR(100) | NO | - | Action name |
-| `resource_type` | VARCHAR(100) | YES | - | e.g. tenant, client, consent |
-| `resource_id` | UUID | YES | - | Affected resource id |
-| `metadata` | JSON | YES | - | Extra context |
-| `ip_address` | VARCHAR(45) | YES | - | Client IP |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column            | Type         | Nullable | Default | Description                  |
+| ----------------- | ------------ | -------- | ------- | ---------------------------- |
+| `id`              | UUID         | NO       | UUIDV4  | Primary key                  |
+| `tenant_id`       | UUID         | NO       | -       | FK → tenants.id              |
+| `actor_client_id` | UUID         | YES      | -       | Client who performed action  |
+| `action`          | VARCHAR(100) | NO       | -       | Action name                  |
+| `resource_type`   | VARCHAR(100) | YES      | -       | e.g. tenant, client, consent |
+| `resource_id`     | UUID         | YES      | -       | Affected resource id         |
+| `metadata`        | JSON         | YES      | -       | Extra context                |
+| `ip_address`      | VARCHAR(45)  | YES      | -       | Client IP                    |
+| `created_at`      | DATE         | NO       | NOW     | Created at                   |
+
 
 **Indexes:** `tenant_id`; `action`; `created_at`.
 
@@ -275,15 +303,17 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.11 `webhooks`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `url` | VARCHAR(2048) | NO | - | Webhook URL |
-| `secret` | VARCHAR(255) | YES | - | HMAC secret (for signing) |
-| `events` | JSON | YES | - | Array of event names (e.g. consent.withdrawn) |
-| `active` | BOOLEAN | NO | true | Active flag |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column       | Type          | Nullable | Default | Description                                   |
+| ------------ | ------------- | -------- | ------- | --------------------------------------------- |
+| `id`         | UUID          | NO       | UUIDV4  | Primary key                                   |
+| `tenant_id`  | UUID          | NO       | -       | FK → tenants.id                               |
+| `url`        | VARCHAR(2048) | NO       | -       | Webhook URL                                   |
+| `secret`     | VARCHAR(255)  | YES      | -       | HMAC secret (for signing)                     |
+| `events`     | JSON          | YES      | -       | Array of event names (e.g. consent.withdrawn) |
+| `active`     | BOOLEAN       | NO       | true    | Active flag                                   |
+| `created_at` | DATE          | NO       | NOW     | Created at                                    |
+
 
 **Indexes:** `tenant_id`.
 
@@ -291,14 +321,16 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.12 `dsr_requests`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `user_id` | VARCHAR(255) | NO | - | Pseudonymous user id |
-| `request_type` | ENUM('access','erasure','correction','portability') | NO | - | DSR type |
-| `status` | ENUM('created','identity_verified','approved','executing','completed','rejected','escalated') | NO | 'created' | Status |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column         | Type                                                                                          | Nullable | Default   | Description          |
+| -------------- | --------------------------------------------------------------------------------------------- | -------- | --------- | -------------------- |
+| `id`           | UUID                                                                                          | NO       | UUIDV4    | Primary key          |
+| `tenant_id`    | UUID                                                                                          | NO       | -         | FK → tenants.id      |
+| `user_id`      | VARCHAR(255)                                                                                  | NO       | -         | Pseudonymous user id |
+| `request_type` | ENUM('access','erasure','correction','portability')                                           | NO       | -         | DSR type             |
+| `status`       | ENUM('created','identity_verified','approved','executing','completed','rejected','escalated') | NO       | 'created' | Status               |
+| `created_at`   | DATE                                                                                          | NO       | NOW       | Created at           |
+
 
 **Indexes:** `tenant_id`; `(tenant_id, status)`.
 
@@ -306,13 +338,15 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.13 `dsr_events`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `dsr_id` | UUID | NO | - | FK → dsr_requests.id |
-| `status` | ENUM(same as dsr_requests) | NO | - | Status at event time |
-| `metadata` | JSON | YES | - | Extra context |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column       | Type                       | Nullable | Default | Description          |
+| ------------ | -------------------------- | -------- | ------- | -------------------- |
+| `id`         | UUID                       | NO       | UUIDV4  | Primary key          |
+| `dsr_id`     | UUID                       | NO       | -       | FK → dsr_requests.id |
+| `status`     | ENUM(same as dsr_requests) | NO       | -       | Status at event time |
+| `metadata`   | JSON                       | YES      | -       | Extra context        |
+| `created_at` | DATE                       | NO       | NOW     | Created at           |
+
 
 **Indexes:** `dsr_id`.
 
@@ -320,14 +354,16 @@ Platform-wide catalog of data identifiers (no tenant_id). Referenced by purposes
 
 ### 3.14 `breach_reports`
 
-| Column | Type | Nullable | Default | Description |
-|--------|------|----------|---------|-------------|
-| `id` | UUID | NO | UUIDV4 | Primary key |
-| `tenant_id` | UUID | NO | - | FK → tenants.id |
-| `summary` | TEXT | NO | - | Summary |
-| `occurred_at` | DATE | NO | - | When breach occurred |
-| `reported_at` | DATE | NO | NOW | When reported |
-| `created_at` | DATE | NO | NOW | Created at |
+
+| Column        | Type | Nullable | Default | Description          |
+| ------------- | ---- | -------- | ------- | -------------------- |
+| `id`          | UUID | NO       | UUIDV4  | Primary key          |
+| `tenant_id`   | UUID | NO       | -       | FK → tenants.id      |
+| `summary`     | TEXT | NO       | -       | Summary              |
+| `occurred_at` | DATE | NO       | -       | When breach occurred |
+| `reported_at` | DATE | NO       | NOW     | When reported        |
+| `created_at`  | DATE | NO       | NOW     | Created at           |
+
 
 **Indexes:** `tenant_id`.
 
@@ -361,9 +397,11 @@ Base path for all below: mounted at `/auth`, `/tenant`, `/clients`, `/audit-logs
 
 **Request body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `googleToken` | string | Yes | Google ID token (length 50–8000) |
+
+| Field         | Type   | Required | Description                      |
+| ------------- | ------ | -------- | -------------------------------- |
+| `googleToken` | string | Yes      | Google ID token (length 50–8000) |
+
 
 **Response 200 – Existing client (full JWT):**
 
@@ -443,11 +481,13 @@ Base path for all below: mounted at `/auth`, `/tenant`, `/clients`, `/audit-logs
 
 **Request body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `organization_name` | string | Yes | Organization name |
-| `country` | string | Yes | Country |
-| `industry` | string | No | Industry |
+
+| Field               | Type   | Required | Description       |
+| ------------------- | ------ | -------- | ----------------- |
+| `organization_name` | string | Yes      | Organization name |
+| `country`           | string | Yes      | Country           |
+| `industry`          | string | No       | Industry          |
+
 
 **Response 201:**
 
@@ -505,10 +545,12 @@ Base path for all below: mounted at `/auth`, `/tenant`, `/clients`, `/audit-logs
 
 **Request body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | string | Yes | Valid email |
-| `role` | string | No | One of: owner, admin, compliance_manager, auditor, viewer (default viewer) |
+
+| Field   | Type   | Required | Description                                                                |
+| ------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `email` | string | Yes      | Valid email                                                                |
+| `role`  | string | No       | One of: owner, admin, compliance_manager, auditor, viewer (default viewer) |
+
 
 **Response 201:** Client object (id, tenant_id, email, name, role, status, provider, created_at, etc.).
 
@@ -556,13 +598,15 @@ Base path for all below: mounted at `/auth`, `/tenant`, `/clients`, `/audit-logs
 
 **Query parameters:**
 
-| Param | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | No | Filter by action (e.g. CONSENT_GRANTED) |
-| `from_date` | string | No | ISO date (inclusive) |
-| `to_date` | string | No | ISO date (inclusive) |
-| `page` | number | No | Default 1 |
-| `limit` | number | No | Default 20, max 100 |
+
+| Param       | Type   | Required | Description                             |
+| ----------- | ------ | -------- | --------------------------------------- |
+| `action`    | string | No       | Filter by action (e.g. CONSENT_GRANTED) |
+| `from_date` | string | No       | ISO date (inclusive)                    |
+| `to_date`   | string | No       | ISO date (inclusive)                    |
+| `page`      | number | No       | Default 1                               |
+| `limit`     | number | No       | Default 20, max 100                     |
+
 
 **Response 200:**
 
@@ -635,11 +679,13 @@ All consent routes: Bearer JWT + requireTenant + authorize('consent:write'). Ten
 
 **Request body:**
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `userId` | string | Yes | Pseudonymous user identifier |
-| `purposeId` | string | Yes | UUID of purpose (must belong to tenant) |
-| `policyVersionId` | string | Yes | UUID of policy version (must belong to tenant) |
+
+| Field             | Type   | Required | Description                                    |
+| ----------------- | ------ | -------- | ---------------------------------------------- |
+| `userId`          | string | Yes      | Pseudonymous user identifier                   |
+| `purposeId`       | string | Yes      | UUID of purpose (must belong to tenant)        |
+| `policyVersionId` | string | Yes      | UUID of policy version (must belong to tenant) |
+
 
 **Response 200:**
 
@@ -711,14 +757,16 @@ If already withdrawn: `message` may be `"Consent already withdrawn"`; `consentId
 
 ## 6. Audit Actions Reference
 
-| Action | When | resource_type | resource_id | Typical metadata |
-|--------|------|----------------|-------------|-------------------|
-| TENANT_CREATED | After onboarding | tenant | tenant.id | organization_name, created_by_email |
-| CLIENT_LOGIN | After Google login (existing client) | client | client.id | email |
-| CLIENT_INVITED | After invite | client | client.id | invited_email, role |
-| CONSENT_GRANTED | After POST /consent | consent | consent.id | user_id, purpose_id, policy_version_id |
-| CONSENT_WITHDRAWN | After DELETE /consent/:userId/:purposeId | consent | consent.id | user_id, purpose_id |
-| CONSENT_READ | GET /consent/:userId (derivation) | consent | null | user_id |
+
+| Action            | When                                     | resource_type | resource_id | Typical metadata                       |
+| ----------------- | ---------------------------------------- | ------------- | ----------- | -------------------------------------- |
+| TENANT_CREATED    | After onboarding                         | tenant        | tenant.id   | organization_name, created_by_email    |
+| CLIENT_LOGIN      | After Google login (existing client)     | client        | client.id   | email                                  |
+| CLIENT_INVITED    | After invite                             | client        | client.id   | invited_email, role                    |
+| CONSENT_GRANTED   | After POST /consent                      | consent       | consent.id  | user_id, purpose_id, policy_version_id |
+| CONSENT_WITHDRAWN | After DELETE /consent/:userId/:purposeId | consent       | consent.id  | user_id, purpose_id                    |
+| CONSENT_READ      | GET /consent/:userId (derivation)        | consent       | null        | user_id                                |
+
 
 IP for audit is taken from `req.ip` or `x-forwarded-for` when available and passed to `logAction`.
 
@@ -771,13 +819,15 @@ Optional in non-production: `stack`. Status code in HTTP status (400, 401, 403, 
 
 ## 10. Scripts (package.json)
 
-| Command | Description |
-|---------|-------------|
-| `npm start` | Run server (node src/index.js) |
-| `npm run dev` | Run with --watch |
-| `npm run db:create` | Create database (from .env) |
-| `npm run db:sync` | Sequelize sync (create/alter tables) |
-| `npm run db:clear` | Truncate all data (requires CLEAR_DB_CONFIRM=yes) |
+
+| Command             | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `npm start`         | Run server (node src/index.js)                    |
+| `npm run dev`       | Run with --watch                                  |
+| `npm run db:create` | Create database (from .env)                       |
+| `npm run db:sync`   | Sequelize sync (create/alter tables)              |
+| `npm run db:clear`  | Truncate all data (requires CLEAR_DB_CONFIRM=yes) |
+
 
 Truncation order (clearDb): consent_events, consent_state_cache, consents, dsr_events, dsr_requests, purposes, policy_versions, clients, webhooks, audit_logs, breach_reports, tenants.
 

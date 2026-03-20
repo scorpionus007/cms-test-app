@@ -5,6 +5,7 @@
 const { Purpose, PolicyVersion } = require('../models');
 const auditService = require('./audit.service');
 const consentService = require('./consent.service');
+const { pseudonymizeIdentityPair } = require('../utils/pseudonymizeUserIdentifier');
 
 /**
  * List active purposes for consent banner. Audit: PUBLIC_PURPOSE_LIST.
@@ -65,8 +66,11 @@ async function getActivePolicy(tenantId, appId, ipAddress = null) {
  * Submit user consent for app. Delegates to consent.service with PUBLIC_CONSENT_GRANTED audit.
  */
 async function grantConsent(tenantId, appId, body, ipAddress = null) {
+  const { userId, emailHash, phoneHash } = pseudonymizeIdentityPair(tenantId, body.email, body.phone_number);
   const mapped = {
-    userId: body.user_id,
+    userId,
+    emailHash,
+    phoneHash,
     purposeId: body.purpose_id,
     policyVersionId: body.policy_version_id,
   };
@@ -80,14 +84,15 @@ async function grantConsent(tenantId, appId, body, ipAddress = null) {
  * Withdraw consent for (user_id, purpose_id). App-scoped.
  */
 async function withdrawConsent(tenantId, appId, body, ipAddress = null) {
+  const { userId, emailHash } = pseudonymizeIdentityPair(tenantId, body.email, body.phone_number);
   await consentService.withdrawConsent(
     tenantId,
     appId,
-    body.user_id,
+    userId,
     body.purpose_id,
     null,
     ipAddress,
-    { auditActionWithdrawn: 'PUBLIC_CONSENT_WITHDRAWN' }
+    { auditActionWithdrawn: 'PUBLIC_CONSENT_WITHDRAWN', emailHash }
   );
   return { success: true };
 }

@@ -22,6 +22,8 @@ if (!connection) {
 
 const QUEUE_NAME = 'webhooks';
 const SIGNATURE_HEADER = 'x-webhook-signature';
+const TIMESTAMP_HEADER = 'x-webhook-timestamp';
+const EVENT_HEADER = 'x-webhook-event';
 const REQUEST_TIMEOUT_MS = 15000;
 
 async function processJob(job) {
@@ -31,12 +33,15 @@ async function processJob(job) {
   }
 
   const payloadStr = JSON.stringify(body);
-  const signature = signPayload(secret, payloadStr);
+  const timestampSeconds = Math.floor(Date.now() / 1000);
+  const { signatureHeader, timestamp } = signPayload(secret, payloadStr, timestampSeconds);
 
   const response = await axios.post(url, body, {
     headers: {
       'Content-Type': 'application/json',
-      [SIGNATURE_HEADER]: signature,
+      [SIGNATURE_HEADER]: signatureHeader,
+      [TIMESTAMP_HEADER]: timestamp,
+      [EVENT_HEADER]: body.event || '',
     },
     timeout: REQUEST_TIMEOUT_MS,
     validateStatus: () => true, // we check status ourselves
