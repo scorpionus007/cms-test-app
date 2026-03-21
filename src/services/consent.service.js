@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { Consent, ConsentEvent, ConsentStateCache, Purpose, PolicyVersion } = require('../models');
 const auditService = require('./audit.service');
 const webhookDispatcher = require('./webhookDispatcher.service');
+const { toIsoTimestamp } = require('../utils/toIsoTimestamp');
 
 /**
  * Generate chain event_hash for tamper evidence (SHA256).
@@ -124,7 +125,7 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
   const previousHash = latestEvent ? latestEvent.event_hash : null;
   const eventHash = computeEventHash(consent.id, 'GRANTED', policyVersionId, previousHash, now);
 
-  await ConsentEvent.create({
+  const grantedEvent = await ConsentEvent.create({
     consent_id: consent.id,
     event_type: 'GRANTED',
     policy_version_id: policyVersionId,
@@ -132,6 +133,8 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     previous_hash: previousHash,
     event_hash: eventHash,
   });
+
+  const eventRecordedAt = toIsoTimestamp(grantedEvent.created_at);
 
   await ConsentStateCache.upsert({
     tenant_id: tenantId,
@@ -149,21 +152,34 @@ async function grantConsent(tenantId, appId, actorClientId, body, ipAddress = nu
     action: auditAction,
     resource_type: 'consent',
     resource_id: consent.id,
-    metadata: { email_hash: emailHash || null, purpose_id: purposeId, policy_version_id: policyVersionId },
+    metadata: {
+      email_hash: emailHash || null,
+      purpose_id: purposeId,
+      policy_version_id: policyVersionId,
+      event_recorded_at: eventRecordedAt,
+      consent_granted_at: toIsoTimestamp(consent.granted_at),
+    },
     ip_address: ipAddress,
   });
 
   webhookDispatcher.dispatch({
     event: 'consent.granted',
     tenant_id: tenantId,
+    envelopeTimestamp: eventRecordedAt,
     payload: {
       user_id: normalizedUserId,
       purpose_id: purposeId,
       policy_version_id: policyVersionId,
+      occurred_at: eventRecordedAt,
     },
   });
 
-  return { consentId: consent.id };
+  return {
+    consentId: consent.id,
+    consentEventId: grantedEvent.id,
+    recordedAt: eventRecordedAt,
+    grantedAt: toIsoTimestamp(consent.granted_at),
+  };
 }
 
 /**
@@ -211,11 +227,17 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
   const latestEvent = await ConsentEvent.findOne({
     where: { consent_id: consent.id },
     order: [['created_at', 'DESC']],
-    attributes: ['event_type', 'event_hash', 'policy_version_id'],
+    attributes: ['event_type', 'event_hash', 'policy_version_id', 'created_at', 'id'],
   });
 
   if (latestEvent && latestEvent.event_type === 'WITHDRAWN') {
-    return { withdrawn: 0, alreadyWithdrawn: true, consentId: consent.id };
+    return {
+      withdrawn: 0,
+      alreadyWithdrawn: true,
+      consentId: consent.id,
+      consentEventId: latestEvent.id,
+      recordedAt: toIsoTimestamp(latestEvent.created_at),
+    };
   }
 
   // Preserve the policy version from the last GRANTED state so verify/read still shows it
@@ -225,7 +247,7 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
   const now = new Date();
   const eventHash = computeEventHash(consent.id, 'WITHDRAWN', lastPolicyVersionId, previousHash, now);
 
-  await ConsentEvent.create({
+  const withdrawnEvent = await ConsentEvent.create({
     consent_id: consent.id,
     event_type: 'WITHDRAWN',
     policy_version_id: lastPolicyVersionId,
@@ -233,6 +255,8 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
     previous_hash: previousHash,
     event_hash: eventHash,
   });
+
+  const eventRecordedAt = toIsoTimestamp(withdrawnEvent.created_at);
 
   await consent.update({ status: 'WITHDRAWN' });
 
@@ -249,10 +273,12 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
   webhookDispatcher.dispatch({
     event: 'consent.withdrawn',
     tenant_id: tenantId,
+    envelopeTimestamp: eventRecordedAt,
     payload: {
       user_id: normalizedUserId,
       purpose_id: purposeId,
       policy_version_id: lastPolicyVersionId,
+      occurred_at: eventRecordedAt,
     },
   });
 
@@ -262,11 +288,20 @@ async function withdrawConsent(tenantId, appId, userId, purposeId, actorClientId
     action: auditAction,
     resource_type: 'consent',
     resource_id: consent.id,
-    metadata: { email_hash: emailHash, purpose_id: purposeId },
+    metadata: {
+      email_hash: emailHash,
+      purpose_id: purposeId,
+      event_recorded_at: eventRecordedAt,
+    },
     ip_address: ipAddress,
   });
 
-  return { withdrawn: 1, consentId: consent.id };
+  return {
+    withdrawn: 1,
+    consentId: consent.id,
+    consentEventId: withdrawnEvent.id,
+    recordedAt: eventRecordedAt,
+  };
 }
 
 /**

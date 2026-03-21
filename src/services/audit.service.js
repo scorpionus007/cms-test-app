@@ -3,6 +3,7 @@
  */
 const { AuditLog, Op, sequelize } = require('../models');
 const { pseudonymizeEmail } = require('../utils/pseudonymizeUserIdentifier');
+const { toIsoTimestamp } = require('../utils/toIsoTimestamp');
 
 /**
  * Log an action to the audit log.
@@ -29,13 +30,18 @@ async function logAction({
     err.statusCode = 500;
     throw err;
   }
+  const loggedAt = new Date().toISOString();
+  const mergedMeta =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? { ...metadata, logged_at: loggedAt }
+      : { logged_at: loggedAt };
   await AuditLog.create({
     tenant_id,
     actor_client_id: actor_client_id || null,
     action,
     resource_type: resource_type || null,
     resource_id: resource_id || null,
-    metadata: metadata && typeof metadata === 'object' ? metadata : null,
+    metadata: mergedMeta,
     ip_address: ip_address || null,
   });
 }
@@ -107,7 +113,11 @@ async function listLogs(tenantId, options = {}) {
   });
 
   return {
-    logs: rows.map((r) => r.toJSON()),
+    logs: rows.map((r) => {
+      const j = r.toJSON();
+      if (j.created_at != null) j.created_at = toIsoTimestamp(j.created_at);
+      return j;
+    }),
     pagination: {
       page: offset / safeLimit + 1,
       limit: safeLimit,

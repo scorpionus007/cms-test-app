@@ -17,10 +17,10 @@ const spec = {
 5. **Purposes** – \`POST /purposes\`, \`GET /purposes\`, \`PUT /purposes/:id\`, \`DELETE /purposes/:id\` (tenant-level, shared by apps).
 6. **Data catalog** – \`GET /data-catalog\`, \`GET /data-catalog/:dataId\` (platform-wide, read-only).
 7. **Policy versions (per app)** – \`POST /tenant/apps/:appId/policy-versions\`, \`GET /tenant/apps/:appId/policy-versions/active\`, \`GET /tenant/apps/:appId/policy-versions\`.
-8. **Consent (per app)** – \`POST /apps/:appId/consent\`, \`GET /apps/:appId/consent/:userId\`, \`DELETE /apps/:appId/consent\`.
-9. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\`.
+8. **Consent (per app)** – Grant: \`POST /apps/:appId/consent\` (body: **email**, **phone_number** or **phoneNumber**, purposeId, policyVersionId — server derives \`user_id\`, \`email_hash\`, \`phone_hash\`; never send \`user_id\` from client). Withdraw: \`DELETE /apps/:appId/consent\` (same identity fields + purpose). Read: \`GET /apps/:appId/consent/:userId\` (path \`userId\` = derived principal hash), \`/artifact\`, \`/export\` (legacy).
+9. **Public API** – \`GET /public/purposes\`; \`GET /public/apps/:appId/policy\`, \`POST /public/apps/:appId/consent\`, \`DELETE /public/apps/:appId/consent\` (same email+phone identity model; API key auth).
 10. **DSR** – Public: \`POST /dsr/request\` (body: **app_id**, user_id, type/request_type). Admin: \`GET /tenant/apps/:appId/dsr\`, \`PATCH /tenant/apps/:appId/dsr/:id\`, \`GET /tenant/apps/:appId/dsr/:id/export\`.
-11. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\`. **Audit** – \`GET /audit-logs\` (owner/admin).`,
+11. **Clients** – \`POST /clients/invite\`, \`GET /clients\`. **Webhooks** – \`POST /webhooks\`, \`GET /webhooks\`, \`DELETE /webhooks/:id\` (consent events include derived \`user_id\` in payload \`data\`). **Audit** – \`GET /audit-logs\` (owner/admin); use \`?email=\` to filter consent grant/withdraw logs by plaintext email (matched via \`metadata.email_hash\`).`,
     version: '1.0.0',
   },
   servers: [
@@ -29,16 +29,16 @@ const spec = {
   tags: [
     { name: 'Auth', description: 'Authentication and current user' },
     { name: 'Tenant', description: 'Organization / tenant and apps' },
-    { name: 'Apps', description: 'Per-app consent (JWT); policy and DSR under /tenant/apps/:appId' },
+    { name: 'Apps', description: 'Per-app operations (JWT): consent grant/withdraw/read under /apps/:appId/consent; policy and DSR admin under /tenant/apps/:appId' },
     { name: 'Clients', description: 'Tenant users (invite, list)' },
-    { name: 'Audit', description: 'Audit logs (owner/admin)' },
-    { name: 'Consent', description: 'Consent identity and events (event-sourced)' },
+    { name: 'Audit', description: 'Audit logs (owner/admin). Consent-related actions store metadata.email_hash (no plaintext email). Filter those rows with query param email= (server hashes and matches).' },
+    { name: 'Consent', description: 'JWT consent APIs under /apps/:appId. Write: POST/DELETE /consent with email + phone (server derives user_id, email_hash, phone_hash). Read: GET /consent/:userId where userId is the derived principal id (HMAC hex), same as consents.user_id and webhook payload data.user_id. State is event-sourced (GET state uses latest consent_events per purpose).' },
     { name: 'Purposes', description: 'Consent purposes (tenant-scoped)' },
     { name: 'Data Catalog', description: 'Platform-wide data catalog (data_id reference for purposes)' },
     { name: 'Policy Versions', description: 'Policy versions (tenant-scoped)' },
-    { name: 'Webhooks', description: 'Webhook endpoints (notify external systems on events)' },
+    { name: 'Webhooks', description: 'Webhook endpoints (notify external systems). consent.granted / consent.withdrawn bodies: { event, timestamp, data: { tenant_id, user_id (derived hash), purpose_id, policy_version_id } }. Signed with HMAC (see POST /webhooks).' },
     { name: 'DSR', description: 'Data Subject Requests (access, erasure, rectification)' },
-    { name: 'Public API', description: 'External CMS integration (API key auth, no JWT)' },
+    { name: 'Public API', description: 'External integration (x-api-key, no JWT). Consent: email+phone aliases; server derives user_id and stores email_hash/phone_hash only in DB; audit uses email_hash.' },
   ],
   components: {
     securitySchemes: {
@@ -246,10 +246,40 @@ const spec = {
           url: { type: 'string', format: 'uri', example: 'https://client.com/webhook' },
           events: {
             type: 'array',
+            description:
+              'Subscribe to event names. For consent.granted / consent.withdrawn, delivered JSON is { event, timestamp, data } where data includes tenant_id, user_id (derived consent principal HMAC hex), purpose_id, policy_version_id (see ConsentWebhookConsentBody).',
             items: { type: 'string', enum: ['consent.granted', 'consent.withdrawn', 'policy.updated', 'purpose.created', 'dsr.completed'] },
             example: ['consent.granted', 'consent.withdrawn'],
           },
           secret: { type: 'string', nullable: true, description: 'Optional; generated if omitted' },
+        },
+      },
+      ConsentWebhookConsentBody: {
+        type: 'object',
+        description: 'Nested under signed webhook JSON root as `data` for consent.granted and consent.withdrawn.',
+        properties: {
+          tenant_id: { type: 'string', format: 'uuid' },
+          user_id: {
+            type: 'string',
+            description: 'Derived consent principal id (tenant-keyed HMAC hex); same as path /apps/:appId/consent/:userId and consents.user_id. Raw email/phone are never included.',
+          },
+          purpose_id: { type: 'string', format: 'uuid' },
+          policy_version_id: { type: 'string', format: 'uuid', nullable: true, description: 'Present on grant; on withdraw, last granted policy version if any' },
+          occurred_at: {
+            type: 'string',
+            format: 'date-time',
+            description: 'ISO-8601 UTC (ms) — same instant as consent_events.created_at for this event',
+          },
+        },
+      },
+      ConsentWebhookEnvelope: {
+        type: 'object',
+        description:
+          'Example signed webhook POST body (verify HMAC over `${x-webhook-timestamp}.${rawBody}`). For consent.* events, root `timestamp` equals consent_events.created_at (same as data.occurred_at).',
+        properties: {
+          event: { type: 'string', enum: ['consent.granted', 'consent.withdrawn'] },
+          timestamp: { type: 'string', format: 'date-time' },
+          data: { $ref: '#/components/schemas/ConsentWebhookConsentBody' },
         },
       },
       WebhookCreateResponse: {
@@ -292,9 +322,18 @@ const spec = {
           action: { type: 'string' },
           resource_type: { type: 'string', nullable: true },
           resource_id: { type: 'string', format: 'uuid', nullable: true },
-          metadata: { type: 'object', nullable: true },
+          metadata: {
+            type: 'object',
+            nullable: true,
+            description:
+              'Every row includes **logged_at** (ISO, when the audit record was written). Consent grant/withdraw also include **event_recorded_at** and grant includes **consent_granted_at** (domain times). CONSENT_*: email_hash, purpose_id, etc. Plaintext email is never stored. CONSENT_READ: user_id (hash), export/artifact flags.',
+          },
           ip_address: { type: 'string', nullable: true },
-          created_at: { type: 'string', format: 'date-time' },
+          created_at: {
+            type: 'string',
+            format: 'date-time',
+            description: 'ISO-8601 UTC with milliseconds — row insert time (audit trail clock)',
+          },
         },
       },
       AuditLogsResponse: {
@@ -446,69 +485,83 @@ const spec = {
       },
       ConsentGrantRequest: {
         type: 'object',
-        description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
-        required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
+        description:
+          'Server derives consent principal: stores email_hash, phone_hash, and user_id (combined HMAC). Never send user_id from the client. Phone: send **phone_number** and/or **phoneNumber**; at least one must be non-empty.',
+        required: ['email', 'purposeId', 'policyVersionId'],
         properties: {
-          email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid' },
-          policyVersionId: { type: 'string', format: 'uuid' },
+          email: { type: 'string', format: 'email', description: 'Raw user email' },
+          phone_number: { type: 'string', description: 'Raw phone (snake_case); required unless phoneNumber is sent' },
+          phoneNumber: { type: 'string', description: 'Raw phone (camelCase); required unless phone_number is sent' },
+          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID' },
+          policyVersionId: { type: 'string', format: 'uuid', description: 'Active policy version UUID for this app' },
         },
       },
       ConsentWithdrawRequest: {
         type: 'object',
-        description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
-        required: ['email', 'phone_number', 'purposeId'],
+        description:
+          'Withdraw for (derived identity, purpose). Same email+phone rules as grant. Send **purposeId** and/or **purpose_id** (at least one valid UUID). Never send path userId — identity is always from body.',
+        required: ['email'],
         properties: {
-          email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid' },
-          purpose_id: { type: 'string', format: 'uuid' },
+          email: { type: 'string', format: 'email', description: 'Raw user email' },
+          phone_number: { type: 'string', description: 'Raw phone (snake_case); required unless phoneNumber is sent' },
+          phoneNumber: { type: 'string', description: 'Raw phone (camelCase); required unless phone_number is sent' },
+          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
+          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
         },
       },
       ConsentGrantResponse: {
         type: 'object',
+        description: 'Timestamps are ISO-8601 UTC with millisecond precision.',
         properties: {
           message: { type: 'string', example: 'Consent recorded' },
           consentId: { type: 'string', format: 'uuid' },
+          consentEventId: { type: 'string', format: 'uuid', description: 'consent_events.id for the GRANTED row' },
+          recordedAt: { type: 'string', format: 'date-time', description: 'Exact time of the GRANTED consent_events row (DB)' },
+          grantedAt: { type: 'string', format: 'date-time', description: 'consents.granted_at after this operation' },
         },
       },
       ConsentWithdrawResponse: {
         type: 'object',
+        description: 'recordedAt is the relevant WITHDRAWN consent_events.created_at (existing row if alreadyWithdrawn).',
         properties: {
           message: { type: 'string', example: 'Consent withdrawn' },
           consentId: { type: 'string', format: 'uuid' },
+          consentEventId: { type: 'string', format: 'uuid' },
+          recordedAt: { type: 'string', format: 'date-time' },
+          alreadyWithdrawn: { type: 'boolean', description: 'True if latest event was already WITHDRAWN' },
+          withdrawn: { type: 'integer', enum: [0, 1], description: '1 if a new WITHDRAWN event was appended' },
         },
       },
       ConsentStateItem: {
         type: 'object',
+        description: 'Latest consent_events row per (user, purpose), mapped to API shape.',
         properties: {
           purposeId: { type: 'string', format: 'uuid' },
-          status: { type: 'string', enum: ['granted', 'withdrawn'] },
+          status: { type: 'string', enum: ['granted', 'withdrawn'], description: 'Derived from latest event_type GRANTED vs WITHDRAWN' },
           policyVersionId: { type: 'string', format: 'uuid', nullable: true },
           timestamp: { type: 'string', format: 'date-time', description: 'ISO-8601 of latest event' },
         },
       },
       ConsentStateResponse: {
         type: 'object',
+        description: 'Current state per purpose for the path userId (derived principal). Audits CONSENT_READ with metadata.user_id.',
         properties: {
           consents: { type: 'array', items: { $ref: '#/components/schemas/ConsentStateItem' } },
         },
       },
       ConsentExportResponse: {
         type: 'object',
-        description: 'Legacy export shape.',
+        description: 'Legacy export shape. dataPrincipal.id is the derived consent user_id (HMAC hex), not plaintext PII.',
         properties: {
-          dataPrincipal: { type: 'object', properties: { id: { type: 'string' } } },
+          dataPrincipal: { type: 'object', properties: { id: { type: 'string', description: 'Derived principal id' } } },
           dataFiduciary: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
           consents: { type: 'array', items: { type: 'object' } },
         },
       },
       ConsentArtifactResponse: {
         type: 'object',
-        description: 'Consent artifact: consentId, dataPrincipal, dataFiduciary, purpose (id, text), data_ids, audit, signature, status.',
+        description:
+          'Consent artifact per latest event: consentId, dataPrincipal (id = derived user_id), dataFiduciary (tenantId), purpose, data_ids, audit, signature, status. No plaintext email/phone in response.',
         properties: {
           consentArtifacts: {
             type: 'array',
@@ -520,7 +573,7 @@ const spec = {
                   properties: {
                     consentId: { type: 'string', format: 'uuid' },
                     timestamp: { type: 'string', format: 'date-time' },
-                    dataPrincipal: { type: 'object', properties: { id: { type: 'string' } } },
+                    dataPrincipal: { type: 'object', properties: { id: { type: 'string', description: 'Derived consent principal (HMAC hex)' } } },
                     dataFiduciary: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } },
                     purpose: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, text: { type: 'string', nullable: true } } },
                     policy_version_id: { type: 'string', format: 'uuid', nullable: true },
@@ -572,13 +625,17 @@ const spec = {
       PublicConsentGrantRequest: {
         type: 'object',
         description:
-          'Public consent requires BOTH email and phone. Server hashes both and stores only hashes (plus combined user_id hash). ' +
-          'Purpose/policy accept camelCase or snake_case.',
+          'Public consent: server stores email_hash, phone_hash, and derived user_id (never returns raw PII). ' +
+          'Email: **email**, **userEmail**, or **user_email** (one required). Phone: **phone_number**, **phoneNumber**, or **phone** (one required). ' +
+          'Purpose: **purposeId** or **purpose_id**. Policy: **policyVersionId** or **policy_version_id**.',
         required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
         properties: {
-          email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
+          email: { type: 'string', format: 'email', description: 'Raw user email (or use userEmail / user_email)' },
+          userEmail: { type: 'string', format: 'email', description: 'Alias for email' },
+          user_email: { type: 'string', format: 'email', description: 'Alias for email' },
+          phone_number: { type: 'string', description: 'Raw phone (snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone (camelCase)' },
+          phone: { type: 'string', description: 'Raw phone (short alias)' },
           purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
           purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
           policyVersionId: { type: 'string', format: 'uuid', description: 'Policy version UUID (camelCase)' },
@@ -588,21 +645,31 @@ const spec = {
       PublicConsentWithdrawRequest: {
         type: 'object',
         description:
-          'Withdraw requires BOTH email and phone. Server hashes both and derives the same combined user_id hash for lookup. ' +
-          'Purpose accepts camelCase or snake_case.',
+          'Withdraw: same identity rules as public grant (email aliases + phone aliases). Purpose: **purposeId** or **purpose_id**.',
         required: ['email', 'phone_number', 'purposeId'],
         properties: {
-          email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
+          email: { type: 'string', format: 'email', description: 'Raw user email (or userEmail / user_email)' },
+          userEmail: { type: 'string', format: 'email', description: 'Alias for email' },
+          user_email: { type: 'string', format: 'email', description: 'Alias for email' },
+          phone_number: { type: 'string', description: 'Raw phone (snake_case)' },
+          phoneNumber: { type: 'string', description: 'Raw phone (camelCase)' },
+          phone: { type: 'string', description: 'Raw phone (short alias)' },
           purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
           purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
         },
       },
       PublicConsentSuccessResponse: {
         type: 'object',
+        description:
+          'Public consent grant/withdraw. Same timestamp fields as JWT consent APIs; no plaintext PII or derived user_id in body.',
         properties: {
           success: { type: 'boolean', example: true },
+          consentId: { type: 'string', format: 'uuid' },
+          consentEventId: { type: 'string', format: 'uuid' },
+          recordedAt: { type: 'string', format: 'date-time', description: 'consent_events.created_at for this grant/withdraw' },
+          grantedAt: { type: 'string', format: 'date-time', description: 'Grant only: consents.granted_at' },
+          alreadyWithdrawn: { type: 'boolean', description: 'Withdraw only' },
+          withdrawn: { type: 'integer', enum: [0, 1], description: 'Withdraw only' },
         },
       },
       DsrExportResponse: {
@@ -884,7 +951,7 @@ const spec = {
         description:
           'Register a webhook endpoint. Payloads are signed with HMAC SHA256. ' +
           'Headers: x-webhook-timestamp (unix seconds), x-webhook-event, x-webhook-signature (t=<ts>,v1=<hex>). ' +
-          'HMAC input: `${t}.${rawBody}`. Secret is returned only on create. Only owner or admin.',
+          'HMAC input: `${t}.${rawBody}`. JSON body: { event, timestamp, data }. For consent.granted / consent.withdrawn, data includes tenant_id, user_id (derived HMAC principal), purpose_id, policy_version_id — see components ConsentWebhookEnvelope. Secret is returned only on create. Only owner or admin.',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -1085,7 +1152,8 @@ const spec = {
       post: {
         tags: ['Consent', 'Apps'],
         summary: 'Grant consent',
-        description: 'Record consent for a user and purpose (per app). Identity is derived server-side from email + phone_number, then hashed. Requires consent:write.',
+        description:
+          'Record consent for a user and purpose (per app). Identity is derived server-side from email + (phone_number or phoneNumber); persists email_hash, phone_hash, user_id. Audit stores email_hash only in metadata. Webhook consent.granted fires. Requires consent:write.',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' }],
         requestBody: {
@@ -1110,7 +1178,8 @@ const spec = {
       delete: {
         tags: ['Consent', 'Apps'],
         summary: 'Withdraw consent (per purpose)',
-        description: 'Append WITHDRAWN event for (derived identity, purpose) in this app. Identity is derived from email + phone_number. Idempotent. Triggers webhook. Requires consent:write.',
+        description:
+          'Append WITHDRAWN event for (derived identity, purpose) in this app. Body: email + (phone_number or phoneNumber) + (purposeId or purpose_id). Idempotent. Triggers consent.withdrawn webhook. Audit metadata includes email_hash. Requires consent:write.',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
@@ -1139,11 +1208,19 @@ const spec = {
       get: {
         tags: ['Consent', 'Apps'],
         summary: 'Get consent state (derived from events)',
-        description: 'Derives current consent state for this app from consent_events. Audits CONSENT_READ.',
+        description:
+          'Derives current consent state per purpose from latest consent_events (not cache). Response: { consents: [{ purposeId, status, policyVersionId, timestamp }] }. Audits CONSENT_READ with metadata.user_id (derived hash).',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
-          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description:
+              'Derived consent principal id (tenant-keyed HMAC hex from email+phone). Same as consents.user_id and webhook payload data.user_id. Not raw email. Filter audit by plaintext email: GET /audit-logs?email=.',
+          },
         ],
         responses: {
           200: {
@@ -1161,11 +1238,19 @@ const spec = {
       get: {
         tags: ['Consent', 'Apps'],
         summary: 'Get consent artifact',
-        description: 'Consent artifact: consentId, dataPrincipal (userId), dataFiduciary (tenantId), purpose (id, text), data_ids, audit, signature, status (ACTIVE/WITHDRAWN).',
+        description:
+          'DPDP-style artifact per consent: consentId, dataPrincipal.id (derived user_id), dataFiduciary (tenant), purpose, data_ids, audit, signature, status ACTIVE|WITHDRAWN. Audits CONSENT_READ (metadata.artifact). No plaintext PII.',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
-          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description:
+              'Derived consent principal id (HMAC hex). Same as POST/DELETE body-derived user_id for that email+phone pair.',
+          },
         ],
         responses: {
           200: {
@@ -1183,11 +1268,17 @@ const spec = {
       get: {
         tags: ['Consent', 'Apps'],
         summary: 'Get consent export (legacy)',
-        description: 'Legacy export shape. Prefer GET /artifact.',
+        description: 'Legacy export shape; dataPrincipal.id is derived user_id. Prefer GET /apps/{appId}/consent/{userId}/artifact. Audits CONSENT_READ (metadata.export).',
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' }, description: 'App UUID' },
-          { name: 'userId', in: 'path', required: true, schema: { type: 'string' }, description: 'Pseudonymous user identifier' },
+          {
+            name: 'userId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Derived consent principal id (HMAC hex), same as other consent read routes.',
+          },
         ],
         responses: {
           200: {
@@ -1225,11 +1316,12 @@ const spec = {
       get: {
         tags: ['Audit'],
         summary: 'List audit logs',
-        description: 'Returns paginated audit logs for the current tenant. Only owner or admin. Filter by action and date range.',
+        description:
+          'Returns paginated audit logs for the current tenant. Only owner or admin. Consent grant/withdraw/public consent rows use metadata.email_hash (no plaintext email stored). Use **email** query to find them: server hashes the query with tenant secret and matches metadata.email_hash.',
         security: [{ bearerAuth: [] }],
         parameters: [
-          { name: 'action', in: 'query', schema: { type: 'string' }, description: 'Filter by action (e.g. TENANT_CREATED, CLIENT_LOGIN, CLIENT_INVITED)' },
-          { name: 'email', in: 'query', schema: { type: 'string', format: 'email' }, description: 'For consent logs: raw email is hashed server-side and matched against metadata.email_hash' },
+          { name: 'action', in: 'query', schema: { type: 'string' }, description: 'Filter by action (e.g. CONSENT_GRANTED, CONSENT_WITHDRAWN, PUBLIC_CONSENT_GRANTED, TENANT_CREATED)' },
+          { name: 'email', in: 'query', schema: { type: 'string', format: 'email' }, description: 'Plaintext email; hashed server-side and matched to metadata.email_hash on consent-related audit entries' },
           { name: 'from_date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'From date (inclusive)' },
           { name: 'to_date', in: 'query', schema: { type: 'string', format: 'date' }, description: 'To date (inclusive)' },
           { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
@@ -1468,9 +1560,10 @@ const spec = {
     },
     '/public/apps/{appId}/consent': {
       post: {
-        tags: ['Public API'],
+        tags: ['Public API', 'Consent'],
         summary: 'Submit consent (public)',
-        description: 'Submit user consent for the app. Requires email + phone_number; server hashes both and derives user_id. API key required. Audit: PUBLIC_CONSENT_GRANTED.',
+        description:
+          'Submit user consent for the app. Identity: email (or userEmail/user_email) + phone (phone_number/phoneNumber/phone); purpose/policy camelCase or snake_case. Server stores hashes + derived user_id. API key (x-api-key). Audit: PUBLIC_CONSENT_GRANTED (metadata.email_hash). Webhook: consent.granted.',
         security: [{ apiKey: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
@@ -1495,9 +1588,10 @@ const spec = {
         },
       },
       delete: {
-        tags: ['Public API'],
+        tags: ['Public API', 'Consent'],
         summary: 'Withdraw consent (public)',
-        description: 'Withdraw consent for (derived identity, purpose_id) for the app. Requires email + phone_number; server hashes both and derives user_id. API key required. Audit: PUBLIC_CONSENT_WITHDRAWN.',
+        description:
+          'Withdraw for (derived identity, purpose). Same field aliases as public grant. API key required. Audit: PUBLIC_CONSENT_WITHDRAWN (metadata.email_hash). Webhook: consent.withdrawn.',
         security: [{ apiKey: [] }],
         parameters: [
           { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },

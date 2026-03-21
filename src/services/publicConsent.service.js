@@ -74,10 +74,10 @@ async function grantConsent(tenantId, appId, body, ipAddress = null) {
     purposeId: body.purpose_id,
     policyVersionId: body.policy_version_id,
   };
-  await consentService.grantConsent(tenantId, appId, null, mapped, ipAddress, {
+  const result = await consentService.grantConsent(tenantId, appId, null, mapped, ipAddress, {
     auditActionGranted: 'PUBLIC_CONSENT_GRANTED',
   });
-  return { success: true };
+  return { success: true, ...result };
 }
 
 /**
@@ -85,7 +85,7 @@ async function grantConsent(tenantId, appId, body, ipAddress = null) {
  */
 async function withdrawConsent(tenantId, appId, body, ipAddress = null) {
   const { userId, emailHash } = pseudonymizeIdentityPair(tenantId, body.email, body.phone_number);
-  await consentService.withdrawConsent(
+  const result = await consentService.withdrawConsent(
     tenantId,
     appId,
     userId,
@@ -94,7 +94,7 @@ async function withdrawConsent(tenantId, appId, body, ipAddress = null) {
     ipAddress,
     { auditActionWithdrawn: 'PUBLIC_CONSENT_WITHDRAWN', emailHash }
   );
-  return { success: true };
+  return { success: true, ...result };
 }
 
 module.exports = {

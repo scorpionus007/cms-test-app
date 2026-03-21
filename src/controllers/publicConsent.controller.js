@@ -31,8 +31,8 @@ async function grantConsent(req, res, next) {
       purpose_id: req.body.purposeId ?? req.body.purpose_id,
       policy_version_id: req.body.policyVersionId ?? req.body.policy_version_id,
     };
-    await publicConsentService.grantConsent(req.tenant.id, appId, body, getClientIp(req));
-    res.status(201).json({ success: true });
+    const result = await publicConsentService.grantConsent(req.tenant.id, appId, body, getClientIp(req));
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }
@@ -48,8 +48,8 @@ async function withdrawConsent(req, res, next) {
       phone_number: phoneNumber,
       purpose_id: req.body.purposeId ?? req.body.purpose_id,
     };
-    await publicConsentService.withdrawConsent(req.tenant.id, appId, body, getClientIp(req));
-    res.status(200).json({ success: true });
+    const result = await publicConsentService.withdrawConsent(req.tenant.id, appId, body, getClientIp(req));
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
