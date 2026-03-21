@@ -14,15 +14,11 @@ const { signPayload } = require('../utils/webhookSigner');
  * @param {string} tenant_id
  * @param {Object} payload - event-specific fields
  */
-/**
- * @param {Object} [opts]
- * @param {string} [opts.envelopeTimestamp] - ISO time for root `timestamp` (e.g. consent_events.created_at); defaults to now
- */
-function buildPayload(event, tenant_id, payload, opts = {}) {
+function buildPayload(event, tenant_id, payload) {
   const data = { tenant_id, ...(payload && typeof payload === 'object' ? payload : {}) };
   return {
     event,
-    timestamp: opts.envelopeTimestamp || new Date().toISOString(),
+    timestamp: new Date().toISOString(),
     data,
   };
 }
@@ -34,9 +30,8 @@ function buildPayload(event, tenant_id, payload, opts = {}) {
  * @param {string} params.event - consent.granted | consent.withdrawn | policy.updated | purpose.created
  * @param {string} params.tenant_id - Tenant UUID
  * @param {Object} params.payload - Event data (user_id, purpose_id, policy_version_id, etc.)
- * @param {string} [params.envelopeTimestamp] - ISO time for payload root `timestamp` (consent: match consent_events.created_at)
  */
-function dispatch({ event, tenant_id, payload, envelopeTimestamp }) {
+function dispatch({ event, tenant_id, payload }) {
   if (!event || !tenant_id) return;
 
   setImmediate(async () => {
@@ -51,7 +46,7 @@ function dispatch({ event, tenant_id, payload, envelopeTimestamp }) {
       return events.includes(event);
     });
 
-    const body = buildPayload(event, tenant_id, payload, { envelopeTimestamp });
+    const body = buildPayload(event, tenant_id, payload);
 
       // If Redis/BullMQ is enabled, enqueue jobs and return immediately.
       if (webhookQueue) {

@@ -42,9 +42,6 @@ async function grant(req, res, next) {
     res.status(200).json({
       message: 'Consent recorded',
       consentId: result.consentId,
-      consentEventId: result.consentEventId,
-      recordedAt: result.recordedAt,
-      grantedAt: result.grantedAt,
     });
   } catch (err) {
     next(err);
@@ -73,14 +70,7 @@ async function withdraw(req, res, next) {
       { emailHash }
     );
     const message = result.alreadyWithdrawn ? 'Consent already withdrawn' : 'Consent withdrawn';
-    res.status(200).json({
-      message,
-      consentId: result.consentId,
-      consentEventId: result.consentEventId,
-      recordedAt: result.recordedAt,
-      alreadyWithdrawn: Boolean(result.alreadyWithdrawn),
-      withdrawn: result.withdrawn,
-    });
+    res.status(200).json({ message, consentId: result.consentId });
   } catch (err) {
     next(err);
   }
