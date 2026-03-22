@@ -10,8 +10,8 @@ node_modules/
 *.pem
 *.key
 
-# Demo apps env (never commit)
-demo-apps/**/.env
+# Demo apps: tracked only in https://github.com/securedapp-github/cms_test_app (not this repo)
+demo-apps/
 
 # Logs and debug
 logs/

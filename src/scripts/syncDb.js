@@ -180,19 +180,27 @@ async function ensureAuditLogIdIsUuid() {
   console.log('Fixed audit_logs.id to UUID (CHAR(36)).');
 }
 
-async function syncDb() {
+/**
+ * Full schema sync + index fixes. Used by CLI (`npm run db:sync`) and dev server auto-sync.
+ * @throws {Error} on connection or migration failure
+ */
+async function syncDatabase() {
+  await sequelize.authenticate();
+  await sequelize.sync({ alter: true });
+  await ensureClientsNameColumn();
+  await ensurePurposesCompositeUnique();
+  await ensureConsentsCompositeUnique();
+  await ensureConsentStateCacheCompositeUnique();
+  await ensureAppsCompositeUnique();
+  await ensureClientsCompositeUnique();
+  await ensurePolicyVersionsCompositeUnique();
+  await ensureAuditLogIdIsUuid();
+  console.log('Database synced successfully.');
+}
+
+async function runSyncCli() {
   try {
-    await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
-    await ensureClientsNameColumn();
-    await ensurePurposesCompositeUnique();
-    await ensureConsentsCompositeUnique();
-    await ensureConsentStateCacheCompositeUnique();
-    await ensureAppsCompositeUnique();
-    await ensureClientsCompositeUnique();
-    await ensurePolicyVersionsCompositeUnique();
-    await ensureAuditLogIdIsUuid();
-    console.log('Database synced successfully.');
+    await syncDatabase();
     process.exit(0);
   } catch (err) {
     console.error('Database sync failed:', err);
@@ -200,4 +208,8 @@ async function syncDb() {
   }
 }
 
-syncDb();
+if (require.main === module) {
+  runSyncCli();
+}
+
+module.exports = { syncDatabase };

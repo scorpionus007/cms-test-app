@@ -4,6 +4,8 @@ Multi-tenant consent management system (DPDP-oriented): Google login, onboarding
 
 **Stack:** Node.js, Express, MySQL, Sequelize.
 
+**Integration test apps** (Consent Demo + ERP simulator) live in a separate repo: **[cms_test_app](https://github.com/securedapp-github/cms_test_app)** — not vendored here.
+
 ---
 
 ## Prerequisites
@@ -77,9 +79,11 @@ npm run db:sync
 
 ```bash
 npm start
-# or with file watch
+# or with file watch — also runs DB sync (`db:sync`) automatically on startup
 npm run dev
 ```
+
+Set `SKIP_DB_SYNC=true` in `.env` if you want faster restarts without syncing each time.
 
 Server runs at **http://localhost:3000** (or your `PORT`). Swagger UI: **http://localhost:3000/api-docs**.
 
@@ -107,9 +111,9 @@ Keep the worker running alongside the API. Failed deliveries are retried (expone
 | Command | Description |
 |---------|-------------|
 | `npm start` | Start server |
-| `npm run dev` | Start with `--watch` |
+| `npm run dev` | Start with `--watch`; **auto-runs `db:sync` first** (unless `SKIP_DB_SYNC=true`) |
 | `npm run db:create` | Create MySQL database from `DB_*` |
-| `npm run db:sync` | Sync/alter tables (Sequelize) |
+| `npm run db:sync` | Sync/alter tables (Sequelize); same logic as dev auto-sync |
 | `npm run db:clear` | Truncate all data (dev only; requires `CLEAR_DB_CONFIRM=yes`) |
 | `npm run db:fix-clients-name` | Add `clients.name` column if missing |
 | `npm run worker:webhook` | Run webhook delivery worker (requires Redis) |

@@ -110,6 +110,8 @@ npm run db:sync
 
 You should see: `Database synced successfully.`
 
+**Note:** After the first setup, `npm run dev` runs the **same sync automatically** before the server starts (so schema stays aligned while you develop). To skip that (faster restarts), set `SKIP_DB_SYNC=true` in `.env`. `npm start` does **not** auto-sync.
+
 If you see a connection error:
 - Check MySQL is running.
 - Check `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` in `.env`.
@@ -123,13 +125,13 @@ If you see a connection error:
 npm start
 ```
 
-Or with auto-reload:
+Or with auto-reload (**and auto DB sync** on each process start):
 
 ```bash
 npm run dev
 ```
 
-You should see: `Server running on port 3000` (or your `PORT`).
+You should see: `Database synced successfully.` (if using `dev` and sync not skipped), then `Database synced (npm run dev auto-sync).`, then `Server running on port 3000` (or your `PORT`).
 
 ---
 
