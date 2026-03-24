@@ -60,6 +60,13 @@ Edit `.env` and set:
 | `REDIS_ENABLED` | No | Set to `true` to enable Redis for webhook queue (default: off) |
 | `REDIS_HOST` | No | Redis host for webhook queue (default `127.0.0.1`) |
 | `REDIS_PORT` | No | Redis port (default `6379`) |
+| `SMTP_HOST` | No | SMTP server host (used for redirect-consent OTP email) |
+| `SMTP_PORT` | No | SMTP server port (default `587`) |
+| `SMTP_SECURE` | No | `true` for SMTPS (usually `465`), else `false` |
+| `SMTP_USER` | No | SMTP username |
+| `SMTP_PASS` | No | SMTP password / app password |
+| `SMTP_FROM_EMAIL` | No | Sender email address for OTP mail |
+| `SMTP_FROM_NAME` | No | Sender display name (default `SecureDApp CMS`) |
 
 ### 3. Database
 

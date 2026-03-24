@@ -6,11 +6,11 @@ const { logOnboarding } = require('../utils/logger');
 /**
  * First-time onboarding: create tenant and client (owner). Caller must ensure user is not already a client.
  * @param {Object} user - From JWT (email, name)
- * @param {Object} body - organization_name, industry, country
+ * @param {Object} body - organization_name, industry, country, consent_flow
  * @param {string} [ipAddress] - Client IP for audit
  */
 async function onboardOrganization(user, body, ipAddress = null) {
-  const { organization_name, industry, country } = body;
+  const { organization_name, industry, country, consent_flow } = body;
   const email = user.email;
   const name = user.name || null;
 
@@ -21,6 +21,13 @@ async function onboardOrganization(user, body, ipAddress = null) {
   }
   if (!country || typeof country !== 'string' || !country.trim()) {
     const err = new Error('country is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const flow = consent_flow == null ? 'embedded' : String(consent_flow).trim().toLowerCase();
+  if (!['embedded', 'redirect'].includes(flow)) {
+    const err = new Error('consent_flow must be embedded or redirect');
     err.statusCode = 400;
     throw err;
   }
@@ -41,6 +48,7 @@ async function onboardOrganization(user, body, ipAddress = null) {
         name: organization_name.trim(),
         industry: industry ? String(industry).trim() : null,
         country: country.trim(),
+        consent_flow: flow,
         dpdp_applicable: true,
       },
       { transaction }
@@ -105,7 +113,7 @@ async function onboardOrganization(user, body, ipAddress = null) {
  */
 async function getTenantById(tenantId) {
   const tenant = await Tenant.findByPk(tenantId, {
-    attributes: ['id', 'name', 'domain', 'industry', 'country', 'dpdp_applicable', 'created_by', 'created_at'],
+    attributes: ['id', 'name', 'domain', 'industry', 'country', 'consent_flow', 'dpdp_applicable', 'created_by', 'created_at'],
   });
   if (!tenant) {
     const err = new Error('Tenant not found');

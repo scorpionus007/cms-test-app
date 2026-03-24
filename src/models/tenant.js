@@ -26,6 +26,11 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(100),
         allowNull: false,
       },
+      consent_flow: {
+        type: DataTypes.ENUM('embedded', 'redirect'),
+        allowNull: false,
+        defaultValue: 'embedded',
+      },
       dpdp_applicable: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

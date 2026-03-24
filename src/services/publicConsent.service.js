@@ -74,10 +74,10 @@ async function grantConsent(tenantId, appId, body, ipAddress = null) {
     purposeId: body.purpose_id,
     policyVersionId: body.policy_version_id,
   };
-  await consentService.grantConsent(tenantId, appId, null, mapped, ipAddress, {
+  const result = await consentService.grantConsent(tenantId, appId, null, mapped, ipAddress, {
     auditActionGranted: 'PUBLIC_CONSENT_GRANTED',
   });
-  return { success: true };
+  return { success: true, consentId: result.consentId };
 }
 
 /**

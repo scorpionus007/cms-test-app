@@ -206,7 +206,7 @@ async function getMe(tenantId, clientId, scopes = []) {
       attributes: ['id', 'email', 'name', 'role', 'status', 'created_at'],
     }),
     Tenant.findByPk(tenantId, {
-      attributes: ['id', 'name', 'domain', 'industry', 'country', 'dpdp_applicable', 'created_at'],
+      attributes: ['id', 'name', 'domain', 'industry', 'country', 'consent_flow', 'dpdp_applicable', 'created_at'],
     }),
   ]);
   if (!client || !tenant) {

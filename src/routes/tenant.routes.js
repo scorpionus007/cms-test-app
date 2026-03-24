@@ -21,6 +21,7 @@ const onboardValidation = [
   body('organization_name').trim().notEmpty().withMessage('organization_name is required'),
   body('country').trim().notEmpty().withMessage('country is required'),
   body('industry').optional().trim().isString(),
+  body('consent_flow').optional().isIn(['embedded', 'redirect']).withMessage('consent_flow must be embedded or redirect'),
 ];
 
 router.post('/onboard', authenticate, onboardValidation, handleValidationErrors, tenantController.onboard);

@@ -120,6 +120,7 @@ const spec = {
           organization_name: { type: 'string', example: 'Acme Pvt Ltd' },
           industry: { type: 'string', example: 'Fintech', nullable: true },
           country: { type: 'string', example: 'India' },
+          consent_flow: { type: 'string', enum: ['embedded', 'redirect'], default: 'embedded' },
         },
       },
       OnboardResponse: {
@@ -164,6 +165,7 @@ const spec = {
           domain: { type: 'string', nullable: true },
           industry: { type: 'string', nullable: true },
           country: { type: 'string' },
+          consent_flow: { type: 'string', enum: ['embedded', 'redirect'] },
           dpdp_applicable: { type: 'boolean' },
           created_by: { type: 'string', format: 'uuid', nullable: true },
           created_at: { type: 'string', format: 'date-time' },
@@ -604,6 +606,21 @@ const spec = {
         properties: {
           success: { type: 'boolean', example: true },
         },
+      },
+      RedirectConsentRequestResponse: {
+        type: 'object',
+        properties: {
+          request_id: { type: 'string', format: 'uuid' },
+          redirect_url: { type: 'string', format: 'uri' },
+          expires_at: { type: 'string', format: 'date-time' },
+        },
+      },
+      RedirectConsentOtpRequest: {
+        type: 'object',
+        properties: {
+          otp: { type: 'string', example: '123456' },
+        },
+        required: ['otp'],
       },
       DsrExportResponse: {
         type: 'object',
@@ -1519,6 +1536,59 @@ const spec = {
           401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           404: { description: 'App or consent not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           429: { description: 'Rate limit exceeded (public API)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/public/apps/{appId}/consent/redirect/request': {
+      post: {
+        tags: ['Public API'],
+        summary: 'Create redirect consent request',
+        description: 'Create a redirect consent session and receive a hosted redirect URL for OTP-based consent. Works only when tenant consent_flow is redirect.',
+        security: [{ apiKey: [] }],
+        parameters: [
+          { name: 'appId', in: 'path', required: true, description: 'App UUID', schema: { type: 'string', format: 'uuid' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/PublicConsentGrantRequest' },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: 'Created',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/RedirectConsentRequestResponse' } } },
+          },
+          400: { description: 'Validation error or non-redirect tenant flow', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          401: { description: 'Invalid API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/public/consent/redirect/{token}/send-otp': {
+      post: {
+        tags: ['Public API'],
+        summary: 'Send OTP for redirect consent',
+        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'OTP sent' },
+          400: { description: 'Invalid or expired redirect request', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'Request not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/public/consent/redirect/{token}/verify-otp': {
+      post: {
+        tags: ['Public API'],
+        summary: 'Verify OTP and grant consent',
+        parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/RedirectConsentOtpRequest' } } } },
+        responses: {
+          200: { description: 'Consent granted' },
+          400: { description: 'Invalid OTP or validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          404: { description: 'Request not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          429: { description: 'Too many OTP attempts', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },

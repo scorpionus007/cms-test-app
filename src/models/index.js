@@ -30,6 +30,7 @@ const db = {
   Consent: require('./consent')(sequelize),
   ConsentEvent: require('./consentEvent')(sequelize),
   ConsentStateCache: require('./consentStateCache')(sequelize),
+  ConsentRedirectSession: require('./consentRedirectSession')(sequelize),
   Webhook: require('./webhook')(sequelize),
   WebhookDelivery: require('./webhookDelivery')(sequelize),
   DsrRequest: require('./dsrRequest')(sequelize),
@@ -88,6 +89,12 @@ db.Purpose.hasMany(db.ConsentStateCache, { foreignKey: 'purpose_id' });
 db.ConsentStateCache.belongsTo(db.Purpose, { foreignKey: 'purpose_id' });
 db.PolicyVersion.hasMany(db.ConsentStateCache, { foreignKey: 'policy_version_id' });
 db.ConsentStateCache.belongsTo(db.PolicyVersion, { foreignKey: 'policy_version_id' });
+
+// Redirect consent sessions
+db.Tenant.hasMany(db.ConsentRedirectSession, { foreignKey: 'tenant_id' });
+db.ConsentRedirectSession.belongsTo(db.Tenant, { foreignKey: 'tenant_id' });
+db.App.hasMany(db.ConsentRedirectSession, { foreignKey: 'app_id' });
+db.ConsentRedirectSession.belongsTo(db.App, { foreignKey: 'app_id' });
 
 // DSR (per app)
 db.Tenant.hasMany(db.DsrRequest, { foreignKey: 'tenant_id' });
