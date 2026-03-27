@@ -12,7 +12,6 @@ module.exports = (sequelize) => {
       data_id: {
         type: DataTypes.STRING(100),
         allowNull: false,
-        unique: true,
         comment: 'Stable platform-wide identifier e.g. AADHAAR_NUMBER',
       },
       category: {
@@ -55,7 +54,10 @@ module.exports = (sequelize) => {
       timestamps: true,
       createdAt: 'created_at',
       updatedAt: 'updated_at',
-      indexes: [{ unique: true, fields: ['data_id'] }, { fields: ['status'] }],
+      indexes: [
+        { name: 'data_catalog_data_id_unique', unique: true, fields: ['data_id'] },
+        { name: 'data_catalog_status_idx', fields: ['status'] },
+      ],
     }
   );
   return DataCatalog;

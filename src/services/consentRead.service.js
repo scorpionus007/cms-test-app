@@ -4,7 +4,7 @@
  * No consent status is stored in the consents table.
  * All queries use parameterized bindings only (no string interpolation).
  */
-const { sequelize, Purpose } = require('../models');
+const { sequelize, Purpose, ConsentStateCache, PolicyVersion } = require('../models');
 const { QueryTypes } = require('sequelize');
 
 /** Fixed SQL: all user/request-derived values are passed via replacements (parameterized). App-scoped. */
@@ -159,4 +159,26 @@ module.exports = {
   getConsentStateDerived,
   getConsentStateExport,
   getConsentArtifact,
+  async listAppConsents(tenantId, appId) {
+    const rows = await ConsentStateCache.findAll({
+      where: { tenant_id: tenantId, app_id: appId },
+      attributes: ['user_id', 'purpose_id', 'current_status', 'policy_version_id', 'updated_at'],
+      include: [
+        { model: Purpose, attributes: ['id', 'name'], required: false },
+        { model: PolicyVersion, attributes: ['id', 'version_label'], required: false },
+      ],
+      order: [['updated_at', 'DESC']],
+    });
+
+    return rows.map((r) => ({
+      id: `${r.user_id}:${r.purpose_id}`,
+      userId: r.user_id,
+      purposeId: r.purpose_id,
+      purposeName: r.Purpose?.name || 'Unknown Purpose',
+      policyVersion: r.PolicyVersion?.version_label || null,
+      policyVersionId: r.policy_version_id || null,
+      currentStatus: r.current_status,
+      updatedAt: r.updated_at,
+    }));
+  },
 };

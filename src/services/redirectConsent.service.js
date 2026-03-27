@@ -16,7 +16,13 @@ function buildRedirectUrl(req, token) {
   if (configuredBase && configuredBase.trim()) {
     return `${configuredBase.replace(/\/+$/, '')}/public/consent/redirect/${token}`;
   }
-  return `${req.protocol}://${req.get('host')}/public/consent/redirect/${token}`;
+  // Avoid relying on req.protocol in environments with non-standard trust proxy setup.
+  const forwardedProto = req?.headers?.['x-forwarded-proto'];
+  const proto = typeof forwardedProto === 'string' && forwardedProto.trim()
+    ? forwardedProto.split(',')[0].trim()
+    : 'http';
+  const host = (typeof req?.get === 'function' ? req.get('host') : null) || req?.headers?.host || 'localhost:3000';
+  return `${proto}://${host}/public/consent/redirect/${token}`;
 }
 
 function createOtpCode() {

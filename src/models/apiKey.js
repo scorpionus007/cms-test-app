@@ -21,7 +21,6 @@ module.exports = (sequelize) => {
       key: {
         type: DataTypes.STRING(255),
         allowNull: false,
-        unique: true,
       },
       active: {
         type: DataTypes.BOOLEAN,
@@ -39,8 +38,8 @@ module.exports = (sequelize) => {
       underscored: true,
       timestamps: false,
       indexes: [
-        { unique: true, fields: ['key'] },
-        { fields: ['tenant_id'] },
+        { name: 'api_keys_key_unique', unique: true, fields: ['key'] },
+        { name: 'api_keys_tenant_id_idx', fields: ['tenant_id'] },
       ],
     }
   );

@@ -24,7 +24,16 @@ securityMiddleware(app);
 // CORS: allow frontend / test origins. Set CORS_ORIGIN (comma-separated) in production.
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
-  : ['http://localhost:3000', 'http://localhost:5500', 'http://127.0.0.1:3000', 'http://127.0.0.1:5500'];
+  : [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5500',
+    'http://localhost:5501',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5500',
+    'http://127.0.0.1:5501',
+  ];
 app.use(cors({ origin: corsOrigins, credentials: true }));
 
 app.use(express.json({ limit: JSON_BODY_LIMIT }));

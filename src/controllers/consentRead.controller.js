@@ -89,4 +89,14 @@ module.exports = {
   getState,
   getExport,
   getArtifact,
+  async listAppConsents(req, res, next) {
+    try {
+      const tenantId = req.user.tenant_id;
+      const appId = req.appId || req.params.appId;
+      const consents = await consentReadService.listAppConsents(tenantId, appId);
+      res.status(200).json({ consents });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

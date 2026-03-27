@@ -14,15 +14,20 @@
 </head>
 <body>
   <h1>Test Google Login → SecureDApp CMS</h1>
-  <p>1. Replace <code>YOUR_GOOGLE_CLIENT_ID</code> in this file with your Client ID from .env.</p>
-  <p>2. Serve this file from the <strong>same origin</strong> you will use in the browser (e.g. <code>npx serve -l 5500</code> → open <code>http://localhost:5500</code>). In Google Cloud Console → Credentials → your OAuth client → <strong>Authorized JavaScript origins</strong>, add this <em>exact</em> origin (no trailing slash):</p>
+  <p>1. Use the same Google Client ID as backend <code>GOOGLE_CLIENT_ID</code> (edit below if needed).</p>
+  <div style="margin:0.5rem 0;">
+    <label for="clientIdInput" style="font-weight:600;">Google Client ID</label>
+    <input id="clientIdInput" style="width:100%;padding:0.5rem;margin-top:0.25rem;" />
+  </div>
+  <p>2. Serve this file from the <strong>same origin</strong> you use in browser: <code>http://localhost:5500</code>. In Google Cloud Console → Credentials → your OAuth client → <strong>Authorized JavaScript origins</strong>, add this exact origin (no trailing slash):</p>
   <p id="originHint" style="background:#fff3cd;padding:0.5rem;font-family:monospace;"></p>
-  <p>3. Start the API: <code>npm start</code>. The API allows CORS from <code>http://localhost:5500</code> by default.</p>
+  <p>3. Start the API: <code>npm start</code>. API CORS allows <code>http://localhost:5500</code>.</p>
   <div class="btn-wrap" id="buttonDiv"></div>
   <pre id="result">(Response will appear here)</pre>
 
   <script>
     const API_URL = 'http://localhost:3000/auth/google-login';
+    const DEFAULT_CLIENT_ID = '815818381358-0002jen28bltsrcffpmniqdanrunrrmv.apps.googleusercontent.com';
     const resultEl = document.getElementById('result');
 
     function handleCredentialResponse(response) {
@@ -45,8 +50,10 @@
 
     window.onload = function () {
       document.getElementById('originHint').textContent = window.location.origin;
+      const clientIdInput = document.getElementById('clientIdInput');
+      clientIdInput.value = DEFAULT_CLIENT_ID;
       google.accounts.id.initialize({
-        client_id: '65737528887-17ckvpcgguj8328qv981kpgsov1tic7t.apps.googleusercontent.com',
+        client_id: clientIdInput.value.trim(),
         callback: handleCredentialResponse
       });
       google.accounts.id.renderButton(document.getElementById('buttonDiv'), {

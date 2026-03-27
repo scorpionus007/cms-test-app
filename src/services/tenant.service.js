@@ -1,4 +1,4 @@
-const { Tenant, Client, sequelize } = require('../models');
+const { Tenant, Client, Consent, DsrRequest, Webhook, sequelize } = require('../models');
 const authService = require('./auth.service');
 const auditService = require('./audit.service');
 const { logOnboarding } = require('../utils/logger');
@@ -123,7 +123,63 @@ async function getTenantById(tenantId) {
   return tenant.toJSON();
 }
 
+/**
+ * Update tenant profile fields (organization basics + consent flow).
+ */
+async function updateTenantById(tenantId, body) {
+  const tenant = await Tenant.findByPk(tenantId);
+  if (!tenant) {
+    const err = new Error('Tenant not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const updates = {};
+  if (typeof body.organization_name === 'string' && body.organization_name.trim()) {
+    updates.name = body.organization_name.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'industry')) {
+    updates.industry = body.industry == null ? null : String(body.industry).trim() || null;
+  }
+  if (typeof body.country === 'string' && body.country.trim()) {
+    updates.country = body.country.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'consent_flow')) {
+    const flow = String(body.consent_flow || '').trim().toLowerCase();
+    if (!['embedded', 'redirect'].includes(flow)) {
+      const err = new Error('consent_flow must be embedded or redirect');
+      err.statusCode = 400;
+      throw err;
+    }
+    updates.consent_flow = flow;
+  }
+
+  await tenant.update(updates);
+  return getTenantById(tenantId);
+}
+
+/**
+ * Dashboard summary stats for tenant home.
+ */
+async function getTenantStats(tenantId) {
+  const [activeConsents, openDsrRequests, registeredClients, activeWebhooks] = await Promise.all([
+    Consent.count({ where: { tenant_id: tenantId, status: 'ACTIVE' } }),
+    DsrRequest.count({ where: { tenant_id: tenantId, status: ['pending', 'processing'] } }),
+    Client.count({ where: { tenant_id: tenantId, status: 'active' } }),
+    Webhook.count({ where: { tenant_id: tenantId, active: true } }),
+  ]);
+
+  return {
+    active_consents: activeConsents,
+    open_dsr_requests: openDsrRequests,
+    registered_clients: registeredClients,
+    active_webhooks: activeWebhooks,
+  };
+}
+
 module.exports = {
   onboardOrganization,
   getTenantById,
+  updateTenantById,
+  getTenantStats,
 };

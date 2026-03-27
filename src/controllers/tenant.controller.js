@@ -24,7 +24,27 @@ async function getMe(req, res, next) {
   }
 }
 
+async function updateMe(req, res, next) {
+  try {
+    const tenant = await tenantService.updateTenantById(req.user.tenant_id, req.body);
+    res.status(200).json(tenant);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getStats(req, res, next) {
+  try {
+    const stats = await tenantService.getTenantStats(req.user.tenant_id);
+    res.status(200).json(stats);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   onboard,
   getMe,
+  updateMe,
+  getStats,
 };

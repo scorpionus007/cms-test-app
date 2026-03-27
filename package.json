@@ -13,7 +13,8 @@
     "db:seed-catalog": "node src/scripts/seedDataCatalog.js",
     "db:fix-clients-name": "node src/scripts/addClientNameColumn.js",
     "consent:expire": "node src/scripts/expireConsents.js",
-    "test:google": "node src/scripts/serve-google-test.js"
+    "test:google": "node src/scripts/serve-google-test.js",
+    "test:redirect": "node src/scripts/serve-redirect-demo.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

@@ -449,24 +449,21 @@ const spec = {
       ConsentGrantRequest: {
         type: 'object',
         description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
-        required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
+        required: ['email', 'phone_number', 'purpose_id', 'policy_version_id'],
         properties: {
           email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid' },
-          policyVersionId: { type: 'string', format: 'uuid' },
+          phone_number: { type: 'string', description: 'Raw phone number (required)' },
+          purpose_id: { type: 'string', format: 'uuid' },
+          policy_version_id: { type: 'string', format: 'uuid' },
         },
       },
       ConsentWithdrawRequest: {
         type: 'object',
         description: 'Consent identity is server-derived from email + phone_number. Do not send user_id/userId.',
-        required: ['email', 'phone_number', 'purposeId'],
+        required: ['email', 'phone_number', 'purpose_id'],
         properties: {
           email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid' },
+          phone_number: { type: 'string', description: 'Raw phone number (required)' },
           purpose_id: { type: 'string', format: 'uuid' },
         },
       },
@@ -575,30 +572,25 @@ const spec = {
         type: 'object',
         description:
           'Public consent requires BOTH email and phone. Server hashes both and stores only hashes (plus combined user_id hash). ' +
-          'Purpose/policy accept camelCase or snake_case.',
-        required: ['email', 'phone_number', 'purposeId', 'policyVersionId'],
+          'Use snake_case fields only.',
+        required: ['email', 'phone_number', 'purpose_id', 'policy_version_id'],
         properties: {
           email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
-          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
-          policyVersionId: { type: 'string', format: 'uuid', description: 'Policy version UUID (camelCase)' },
-          policy_version_id: { type: 'string', format: 'uuid', description: 'Policy version UUID (snake_case)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required)' },
+          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID' },
+          policy_version_id: { type: 'string', format: 'uuid', description: 'Policy version UUID' },
         },
       },
       PublicConsentWithdrawRequest: {
         type: 'object',
         description:
           'Withdraw requires BOTH email and phone. Server hashes both and derives the same combined user_id hash for lookup. ' +
-          'Purpose accepts camelCase or snake_case.',
-        required: ['email', 'phone_number', 'purposeId'],
+          'Use snake_case fields only.',
+        required: ['email', 'phone_number', 'purpose_id'],
         properties: {
           email: { type: 'string', description: 'Raw user email (required)' },
-          phone_number: { type: 'string', description: 'Raw phone number (required, snake_case)' },
-          phoneNumber: { type: 'string', description: 'Raw phone number (camelCase alternative)' },
-          purposeId: { type: 'string', format: 'uuid', description: 'Purpose UUID (camelCase)' },
-          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID (snake_case)' },
+          phone_number: { type: 'string', description: 'Raw phone number (required)' },
+          purpose_id: { type: 'string', format: 'uuid', description: 'Purpose UUID' },
         },
       },
       PublicConsentSuccessResponse: {

@@ -3,6 +3,7 @@ const { body } = require('express-validator');
 const tenantController = require('../controllers/tenant.controller');
 const apiKeyController = require('../controllers/apiKey.controller');
 const appController = require('../controllers/app.controller');
+const consentReadController = require('../controllers/consentRead.controller');
 const policyVersionRoutes = require('./policyVersion.routes');
 const { adminRouter: dsrAdminRoutes } = require('./dsr.routes');
 const { authenticate, requireTenant, requireRole, handleValidationErrors } = require('../middleware/auth.middleware');
@@ -24,8 +25,17 @@ const onboardValidation = [
   body('consent_flow').optional().isIn(['embedded', 'redirect']).withMessage('consent_flow must be embedded or redirect'),
 ];
 
+const updateMeValidation = [
+  body('organization_name').optional().trim().notEmpty().withMessage('organization_name cannot be empty'),
+  body('country').optional().trim().notEmpty().withMessage('country cannot be empty'),
+  body('industry').optional({ nullable: true }).custom((v) => v == null || typeof v === 'string').withMessage('industry must be a string'),
+  body('consent_flow').optional().isIn(['embedded', 'redirect']).withMessage('consent_flow must be embedded or redirect'),
+];
+
 router.post('/onboard', authenticate, onboardValidation, handleValidationErrors, tenantController.onboard);
 router.get('/me', authenticate, requireTenant, tenantController.getMe);
+router.put('/me', authenticate, requireTenant, updateMeValidation, handleValidationErrors, tenantController.updateMe);
+router.get('/stats', authenticate, requireTenant, tenantController.getStats);
 
 // API keys (owner/admin)
 router.post('/api-keys', authenticate, requireTenant, requireRole('owner', 'admin'), createValidation, handleValidationErrors, apiKeyController.create);
@@ -42,6 +52,7 @@ router.delete('/apps/:appId', authenticate, requireTenant, requireRole('owner', 
 // App-scoped: policy versions and DSR (admin routes only; public DSR submit stays at POST /dsr/request with app_id in body)
 const appScopedRouter = express.Router({ mergeParams: true });
 appScopedRouter.use(authenticate, requireTenant, requireApp);
+appScopedRouter.get('/consents', requireRole('owner', 'admin', 'compliance_manager', 'auditor'), consentReadController.listAppConsents);
 appScopedRouter.use('/policy-versions', policyVersionRoutes);
 appScopedRouter.use('/dsr', dsrAdminRoutes);
 router.use('/apps/:appId', appScopedRouter);
