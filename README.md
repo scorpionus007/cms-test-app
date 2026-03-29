@@ -1,27 +1,24 @@
-## Redirect Consent Demo
+## Demo apps (this repo)
 
-This demo creates a redirect consent request and opens the hosted OTP page in a popup.
+### Unified demo (recommended)
 
-### Run
+Single Node proxy API plus React UI — embedded consent, webhooks (ERP), and redirect consent:
 
-1. Start API server:
-   - `npm start`
-2. Start demo page:
-   - `npm run test:redirect`
-3. Open:
-   - `http://localhost:5501`
+- **`unified-demo/backend/`** — demo API (default **:5050**)
+- **`unified-demo/frontend/`** — Vite UI (default **:5175**)
 
-### How to use
+From the **monorepo root**:
 
-- Fill:
-  - `x-api-key`
-  - `app_id`
-  - `email`
-  - `phone_number`
-- Optional helper:
-  - Click **Prefill policy/purpose** to fetch first purpose + active policy
-- Click **Create Redirect URL + Open Popup**
-- In popup:
-  - Click **Send OTP**
-  - Enter OTP and verify
-  - Consent is granted
+```bash
+npm run demo:install
+npm run demo:all
+```
+
+Then open **http://localhost:5175**. Start the main CMS API separately (e.g. **:3000**) and configure connection fields in the UI.
+
+Details: [`unified-demo/README.md`](./unified-demo/README.md).
+
+### Standalone redirect HTML
+
+- **`redirect-consent-demo.html`** — static page for redirect + OTP flow testing.
+- Serve with **`npm run test:redirect`** (port **5501**) while the CMS API runs on **:3000**.
